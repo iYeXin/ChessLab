@@ -1,4 +1,4 @@
-import type { EngineInfo, UciEngineDriver } from '@chesslab/engine-uci';
+import type { EngineInfo, GoLimits, UciEngineDriver } from '@chesslab/engine-uci';
 import type { MoveUci } from '@chesslab/rules-core';
 
 /**
@@ -29,10 +29,19 @@ export type AssistSnapshot = AssistLine[];
 
 export interface AssistEngine {
   /**
-   * (Re)start infinite analysis on a position. Supersedes any running search
-   * and resets accumulated lines.
+   * (Re)start analysis on a position. Supersedes any running search and
+   * resets accumulated lines.
+   *
+   * Power model:
+   * - no budget        -> `go infinite` (continuous load; caller owns duty
+   *                        cycle via stop()/suspend)
+   * - budgetMs         -> finite `go movetime` burst, engine stops itself
+   * - maxDepth         -> finite `go depth`
    */
-  begin(fen: string, opts?: { multiPv?: number }): void;
+  begin(
+    fen: string,
+    opts?: { multiPv?: number; budgetMs?: number; maxDepth?: number },
+  ): void;
   /** Halt the current search and clear lines. */
   stop(): void;
   onLines(cb: (lines: AssistSnapshot) => void): () => void;
@@ -53,7 +62,7 @@ export function createUciAssistEngine(driver: UciEngineDriver): AssistEngine {
   };
 
   return {
-    async begin(fen: string, opts?: { multiPv?: number }) {
+    async begin(fen: string, opts?: { multiPv?: number; budgetMs?: number; maxDepth?: number }) {
       const myGen = ++gen;
       latest.clear();
       publish();
@@ -62,10 +71,19 @@ export function createUciAssistEngine(driver: UciEngineDriver): AssistEngine {
       await driver.setOptions({ MultiPV: multiPv });
       if (myGen !== gen) return; // superseded while options were applied
 
-      // Infinite search; settled later via stop() -> bestmove. Stale results
-      // are dropped through generation checks.
+      // Finite budgets keep the CPU duty-cycled (mobile-friendly); without a
+      // budget the search runs infinitely and the caller owns pausing.
+      const limits: GoLimits =
+        opts?.budgetMs !== undefined
+          ? { movetimeMs: Math.max(50, opts.budgetMs) }
+          : opts?.maxDepth !== undefined
+            ? { depth: opts.maxDepth }
+            : { infinite: true };
+
+      // Settles on bestmove (finite) or stop() (infinite). Stale results are
+      // dropped through generation checks.
       void driver
-        .search({ fen }, { infinite: true }, (info: EngineInfo) => {
+        .search({ fen }, limits, (info: EngineInfo) => {
           if (myGen !== gen || info.multipv === undefined) return;
           const prev = latest.get(info.multipv);
           if (prev && (info.depth ?? 0) < (prev.depth ?? 0)) return;

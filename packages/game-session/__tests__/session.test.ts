@@ -192,11 +192,10 @@ describe('GameClock flagging', () => {
 
   it('adds increment after each completed move', () => {
     let fakeNow = 1000;
-    const fakeSetInterval = (() => 0) as unknown as typeof setInterval;
     const clock = new GameClock(
       { initialMs: 60_000, incrementMs: 500 },
       { onFlag: () => undefined },
-      fakeSetInterval,
+      (() => 0) as unknown as typeof setInterval,
       () => undefined,
       () => fakeNow,
     );
@@ -206,5 +205,27 @@ describe('GameClock flagging', () => {
     const s = clock.state();
     expect(s.remainingW).toBe(58_500); // 60000 - 2000 + 500
     expect(s.activeSide).toBe('b');
+  });
+
+  it('pause freezes the budget; elapsed paused time is not charged', () => {
+    let fakeNow = 1000;
+    const clock = new GameClock(
+      { initialMs: 60_000, incrementMs: 0 },
+      { onFlag: () => undefined },
+      (() => 0) as unknown as typeof setInterval,
+      () => undefined,
+      () => fakeNow,
+    );
+    clock.start('w');
+    fakeNow += 5_000; // think 5s
+    const snap = clock.pause();
+    expect(snap.remainingW).toBe(55_000);
+
+    fakeNow += 120_000; // two minutes pass while suspended — not charged
+    clock.resume();
+    fakeNow += 1_000; // one more active second after resume
+    const st = clock.stop();
+    expect(st.remainingW).toBe(54_000);
+    expect(st.running).toBe(false);
   });
 });

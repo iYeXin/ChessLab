@@ -69,6 +69,12 @@ export class GameSession {
   private engineThinking: Side | null = null;
   private assist: AssistEngine | null = null;
   private assistOn = false;
+  private assistOpts: {
+    multiPv?: number;
+    budgetMs?: number;
+    maxDepth?: number;
+    pauseOnOpponentTurn: boolean;
+  } = { pauseOnOpponentTurn: true };
   private hintRunner: EngineTurnRunner | null = null;
 
   constructor(private opts: SessionOptions) {}
@@ -204,11 +210,28 @@ export class GameSession {
   /**
    * Turn on continuous analysis of the position on the move. Requires
    * `opts.analysisFactory`. Emits `assist` events with top-N lines.
+   *
+   * Power policy:
+   * - pauseOnOpponentTurn (default true): analyze ONLY while a human is on
+   *   move — avoids two engines searching simultaneously (double load).
+   * - budgetMs / maxDepth: finite search bursts instead of `go infinite`
+   *   (e.g. budgetMs 1200 = short CPU burst per position, then idle).
    */
-  async enableAssist(opts?: { multiPv?: number }): Promise<void> {
+  async enableAssist(opts?: {
+    multiPv?: number;
+    budgetMs?: number;
+    maxDepth?: number;
+    pauseOnOpponentTurn?: boolean;
+  }): Promise<void> {
     if (!this.opts.analysisFactory) {
       throw new Error('enableAssist requires SessionOptions.analysisFactory');
     }
+    this.assistOpts = {
+      multiPv: opts?.multiPv,
+      budgetMs: opts?.budgetMs,
+      maxDepth: opts?.maxDepth,
+      pauseOnOpponentTurn: opts?.pauseOnOpponentTurn ?? true,
+    };
     if (!this.assist) {
       this.assist = await this.opts.analysisFactory();
       this.assist.onLines(lines => {
@@ -218,7 +241,9 @@ export class GameSession {
       });
     }
     this.assistOn = true;
-    this.assist.begin(this.rules.fen(), opts);
+    if (!this.suspended) {
+      this.assist.begin(this.rules.fen(), this.assistOpts);
+    }
   }
 
   disableAssist(): void {
@@ -228,6 +253,46 @@ export class GameSession {
 
   get assistEnabled(): boolean {
     return this.assistOn;
+  }
+
+  // ---- mobile power lifecycle ---------------------------------------------
+
+  private suspended = false;
+  private assistWasOnBeforeSuspend = false;
+
+  /**
+   * Called when the app goes to background / screen locks: cancels any active
+   * engine search, pauses the clock and halts assist analysis. Idempotent.
+   * The OS would eventually freeze us anyway, but that can take minutes of
+   * full-core burn first — explicit suspension is the battery-friendly path.
+   */
+  suspend(): void {
+    if (this.suspended) return;
+    this.suspended = true;
+    this.cancelEngineThinking();
+    this.clock?.pause();
+    this.assistWasOnBeforeSuspend = this.assistOn;
+    if (this.assistOn) this.assist?.stop();
+  }
+
+  /** Foreground again: restore clocks, assist and any pending engine turn. */
+  resume(): void {
+    if (!this.suspended || this.disposed) return;
+    this.suspended = false;
+    this.clock?.resume();
+    if (
+      this.assistWasOnBeforeSuspend &&
+      this.assist &&
+      !this.over &&
+      this.currentPlayerConfig()?.kind === 'human'
+    ) {
+      this.assist.begin(this.rules.fen(), this.assistOpts);
+    }
+    // A cancelled opponent search must be re-issued or the game stalls.
+    const cfg = this.currentPlayerConfig();
+    if (!this.over && cfg?.kind === 'engine') {
+      void this.pumpEngineTurn();
+    }
   }
 
   // ---- introspection --------------------------------------------------------
@@ -258,10 +323,26 @@ export class GameSession {
 
   private emit(e: SessionEvent): void {
     for (const fn of [...this.listeners]) fn(e);
-    // Assist mode follows every position change: 'started' + each 'turn'
-    // (turn fires after moves AND after undo, so both stay covered).
-    if (this.assistOn && this.assist && (e.kind === 'turn' || e.kind === 'started')) {
-      this.assist.begin(this.rules.fen());
+
+    // Assist mode follows position changes. Duty-cycle policy:
+    // - 'started' always (re)starts analysis at the initial position;
+    // - 'turn' restarts it only when a HUMAN is on move (default), so the
+    //   assist engine never doubles up with the opponent's own search.
+    if (!this.assistOn || !this.assist || this.suspended) return;
+    if (e.kind === 'started') {
+      this.assist.begin(this.rules.fen(), this.assistOpts);
+      return;
+    }
+    if (
+      e.kind === 'turn' &&
+      (!this.assistOpts.pauseOnOpponentTurn ||
+        this.currentPlayerConfig()?.kind === 'human')
+    ) {
+      this.assist.begin(this.rules.fen(), this.assistOpts);
+      return;
+    }
+    if (e.kind === 'turn' && this.assistOpts.pauseOnOpponentTurn) {
+      this.assist.stop(); // opponent thinking — free the CPU
     }
   }
 

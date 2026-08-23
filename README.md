@@ -95,3 +95,19 @@ pnpm windows            # 构建 Windows 应用（需 VS2026 >=18.6）
 关键设计：辅助引擎是**独立于对手引擎的进程**（UCI 单进程仅允许一个活动搜索；
 且提示强度恒定满级、不受对手难度影响）。局面变化（含悔棋）与终局由
 `GameSession` 自动驱动启停，UI 只消费事件。
+
+### 移动端功耗控制
+
+| 场景 | 机制 |
+|---|---|
+| 对手思考 | 思考时间按难度分级且被剩余时间封顶（`pickThinkTimeMs`），短脉冲负载 |
+| L1 提示 | 单次 ~0.7s 突发；实例复用无冷启动 |
+| L2 常驻辅助 | 三档策略：① `pauseOnOpponentTurn`(默认开)——只在人类回合分析，杜绝双引擎同时满载；② `budgetMs`/`maxDepth` 有限搜索替代 `go infinite`；③ 无预算时由调用方占空 |
+| 切后台/锁屏 | `session.suspend()`：取消全部引擎搜索+暂停棋钟+挂起辅助；`resume()` 恢复并重发被取消的回合。UI 层用 RN `AppState` 监听接线即可 |
+
+```ts
+// 推荐的省电配置示例
+await session.enableAssist({ multiPv: 2, budgetMs: 1200 }); // 每局面 1.2s 突发
+AppState.addEventListener('change', s =>
+  s === 'active' ? session.resume() : session.suspend());
+```
