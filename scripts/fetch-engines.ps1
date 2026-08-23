@@ -43,16 +43,25 @@ if (-not $sfExe) { throw "no stockfish exe inside downloaded zip" }
 Copy-Item $sfExe.FullName (Join-Path $sfDir "stockfish.exe") -Force
 Unblock-File (Join-Path $sfDir "stockfish.exe")
 
-# Android arm64 build (for jniLibs sync)
-$sfAndroidTar = Join-Path $env:TEMP "stockfish-android-armv8.tar"
-Get-Asset "https://github.com/official-stockfish/Stockfish/releases/download/sf_18/stockfish-android-armv8.tar" $sfAndroidTar
+# Android arm64 build (for jniLibs sync); prefer the faster dotprod variant.
+$sfAndroidTar = Join-Path $env:TEMP "stockfish-android-armv8-dotprod.tar"
+try {
+    Get-Asset "https://github.com/official-stockfish/Stockfish/releases/download/sf_18/stockfish-android-armv8-dotprod.tar" $sfAndroidTar
+} catch {
+    Write-Warning "dotprod asset missing, falling back to plain armv8"
+    Get-Asset "https://github.com/official-stockfish/Stockfish/releases/download/sf_18/stockfish-android-armv8.tar" $sfAndroidTar
+}
 $sfAndroidDir = Join-Path $Dest "android-arm64"
 New-Item -ItemType Directory -Force -Path $sfAndroidDir | Out-Null
 tar -xf $sfAndroidTar -C $sfAndroidDir
-$sfSoSrc = Get-ChildItem $sfAndroidDir -Recurse -Filter "stockfish*" | Where-Object { $_.Name -notlike "*.tar" } | Select-Object -First 1
+# The tarball nests everything under stockfish/<binary> plus sources; pick the
+# executable FILE (not a directory!) matching the binary name.
+$sfSoSrc = Get-ChildItem $sfAndroidDir -Recurse -File |
+    Where-Object { $_.Name -match "^stockfish-android-armv8" } |
+    Select-Object -First 1
 if ($sfSoSrc) {
     Copy-Item $sfSoSrc.FullName (Join-Path $sfAndroidDir "libstockfish.so") -Force
-    Write-Host "android arm64 engine: $(Join-Path $sfAndroidDir 'libstockfish.so')"
+    Write-Host "android arm64 engine: $(Join-Path $sfAndroidDir 'libstockfish.so') ($([math]::Round($sfSoSrc.Length/1MB)) MB)"
 } else {
     Write-Warning "android stockfish binary not found inside tarball"
 }
@@ -84,9 +93,10 @@ if ($pfNnue) { Copy-Item $pfNnue.FullName (Join-Path $pfBase "pikafish.nnue") -F
 
 # Android binaries live in the same archive; prefer dotprod when present.
 $pfAnd = $allExtracted |
-    Where-Object { $_.FullName -match "\\Android\\pikafish-armv8-dotprod$" } | Select-Object -First 1
+    Where-Object { -not $_.PSIsContainer -and $_.FullName -match "\\Android\\pikafish-armv8-dotprod$" } | Select-Object -First 1
 if (-not $pfAnd) {
-    $pfAnd = $allExtracted | Where-Object { $_.FullName -match "\\Android\\pikafish-armv8$" } | Select-Object -First 1
+    $pfAnd = $allExtracted |
+        Where-Object { -not $_.PSIsContainer -and $_.FullName -match "\\Android\\pikafish-armv8$" } | Select-Object -First 1
 }
 if ($pfAnd) {
     Copy-Item $pfAnd.FullName (Join-Path $pfAndroidDir "libpikafish.so") -Force
