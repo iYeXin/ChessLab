@@ -7,7 +7,7 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableNativeMap
-import com.facebook.react.modules.core.DeviceEventEmitter
+import com.facebook.react.modules.core.DeviceEventManagerModule
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
@@ -77,7 +77,8 @@ class ChessEnginesModule(private val ctx: ReactApplicationContext) :
               putInt("handle", handle)
               putString("line", line)
             }
-            ctx.getJSModule(DeviceEventEmitter::class.java).emit("chessEngineLine", params)
+            ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+              .emit("chessEngineLine", params)
           }
         } catch (_: Exception) {
           // stream closed
@@ -88,7 +89,8 @@ class ChessEnginesModule(private val ctx: ReactApplicationContext) :
           putInt("handle", handle)
           putInt("code", code ?: -1)
         }
-        ctx.getJSModule(DeviceEventEmitter::class.java).emit("chessEngineExit", exit)
+        ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+          .emit("chessEngineExit", exit)
       }, "engine-stdout-$handle").apply { isDaemon = true }.start()
 
       // Drain stderr so the pipe never fills up and blocks the engine.
