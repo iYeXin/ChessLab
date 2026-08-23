@@ -1,10 +1,8 @@
 package com.chessapp
 
-import android.annotation.SuppressLint
+import com.chessapp.spec.NativeChessEnginesSpec
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
-import com.facebook.react.bridge.ReactContextBaseJavaModule
-import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableNativeMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
@@ -15,45 +13,41 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Spawns chess engine binaries as OS processes and streams their stdout to JS.
+ * Codegen TurboModule implementation (extends the generated NativeChessEnginesSpec).
  *
  * Android 10+ (targetSdk >= 29) forbids exec() from the writable app home
- * directory (SELinux W^X), but explicitly allows it from the app's
- * `nativeLibraryDir`. We exploit the standard trick:
+ * directory (SELinux W^X), but allows it from `nativeLibraryDir`. Engines are
+ * therefore packaged as jniLibs/arm64-v8a/lib<name>.so with
+ * `useLegacyPackaging = true`, and launched from nativeLibraryDir at runtime.
+ * Pikafish's NNUE rides along as libpikafish_nnue.so (readable via EvalFile).
  *
- *   jniLibs/arm64-v8a/libstockfish.so   ->  <nativeLibraryDir>/libstockfish.so
- *   jniLibs/arm64-v8a/libpikafish.so    ->  <nativeLibraryDir>/libpikafish.so
- *   jniLibs/arm64-v8a/libpikafish_nnue.so -> readable NNUE file for EvalFile
- *
- * (`useLegacyPackaging = true` in build.gradle makes AGP extract them to disk.)
- *
- * Events emitted to JS:
+ * Events emitted to JS (via RCTDeviceEventEmitter):
  *   "chessEngineLine" { handle:number, line:string }
- *   "chessEngineExit" { handle:number, code:number|null }
+ *   "chessEngineExit" { handle:number, code:number }
  */
-class ChessEnginesModule(private val ctx: ReactApplicationContext) :
-    ReactContextBaseJavaModule(ctx) {
+@Suppress("UNUSED_PARAMETER")
+class ChessEnginesModule(reactContext: ReactApplicationContext) :
+    NativeChessEnginesSpec(reactContext) {
 
   private val processes = ConcurrentHashMap<Int, Process>()
   private val handleGen = AtomicInteger(100)
 
   override fun getName(): String = "ChessEngines"
 
-  /** Absolute directory containing our packaged engine binaries. */
-  @SuppressLint("DiscouragedPrivateApi")
-  @ReactMethod
-  fun getNativeLibraryDir(promise: Promise) {
-    try {
-      promise.resolve(ctx.applicationInfo.nativeLibraryDir)
-    } catch (t: Throwable) {
-      promise.reject("NATIVE_DIR", t)
-    }
+  override fun getEnginesDir(promise: Promise) {
+    // Android uses nativeLibraryDir; desktop override handled by WinRT module.
+    promise.resolve(reactApplicationContext.applicationInfo.nativeLibraryDir)
   }
 
-  @ReactMethod
-  fun startEngine(spec: ReadableMap, promise: Promise) {
+  override fun getNativeLibraryDir(promise: Promise) {
+    promise.resolve(reactApplicationContext.applicationInfo.nativeLibraryDir)
+  }
+
+  override fun startEngine(spec: ReadableMap?, promise: Promise) {
     try {
-      val command = spec.getString("command") ?: throw IllegalArgumentException("command required")
+      val command =
+        spec?.getString("command")
+          ?: throw IllegalArgumentException("spec.command is required")
       val args = mutableListOf(command)
       spec.getArray("args")?.let { arr ->
         for (i in 0 until arr.size()) arr.getString(i)?.let { args.add(it) }
@@ -67,7 +61,6 @@ class ChessEnginesModule(private val ctx: ReactApplicationContext) :
       val handle = handleGen.incrementAndGet()
       processes[handle] = process
 
-      // stdout -> JS events
       Thread({
         try {
           val reader = BufferedReader(InputStreamReader(process.inputStream))
@@ -77,26 +70,23 @@ class ChessEnginesModule(private val ctx: ReactApplicationContext) :
               putInt("handle", handle)
               putString("line", line)
             }
-            ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-              .emit("chessEngineLine", params)
+            emit("chessEngineLine", params)
           }
         } catch (_: Exception) {
           // stream closed
         }
         processes.remove(handle)
-        val code = try { process.waitFor() } catch (_: InterruptedException) { null }
+        val code = try { process.waitFor() } catch (_: InterruptedException) { -1 }
         val exit = WritableNativeMap().apply {
           putInt("handle", handle)
-          putInt("code", code ?: -1)
+          putInt("code", code)
         }
-        ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-          .emit("chessEngineExit", exit)
+        emit("chessEngineExit", exit)
       }, "engine-stdout-$handle").apply { isDaemon = true }.start()
 
-      // Drain stderr so the pipe never fills up and blocks the engine.
       Thread({
         try {
-          BufferedReader(InputStreamReader(process.errorStream)).forEachLine { /* discard */ }
+          BufferedReader(InputStreamReader(process.errorStream)).forEachLine { }
         } catch (_: Exception) {
         }
       }, "engine-stderr-$handle").apply { isDaemon = true }.start()
@@ -107,30 +97,39 @@ class ChessEnginesModule(private val ctx: ReactApplicationContext) :
     }
   }
 
-  @ReactMethod
-  fun writeLine(handle: Int, line: String, promise: Promise) {
-    val ok = processes[handle]?.let { proc ->
-      try {
-        proc.outputStream.write((line + "\n").toByteArray(Charsets.UTF_8))
-        proc.outputStream.flush()
-        true
-      } catch (_: Exception) {
-        false
-      }
-    } ?: false
-    if (ok) promise.resolve(null) else promise.reject("WRITE_FAILED", "no such engine or stdin closed")
+  override fun writeLine(handle: Double, line: String?, promise: Promise) {
+    val proc = processes[handle.toInt()]
+    if (proc == null || line == null) {
+      promise.reject("WRITE_FAILED", "no such engine or empty line")
+      return
+    }
+    try {
+      proc.outputStream.write((line + "\n").toByteArray(Charsets.UTF_8))
+      proc.outputStream.flush()
+      promise.resolve(null)
+    } catch (t: Throwable) {
+      promise.reject("WRITE_FAILED", t)
+    }
   }
 
-  @ReactMethod
-  fun stopEngine(handle: Int, promise: Promise) {
-    processes.remove(handle)?.destroy()
+  override fun stopEngine(handle: Double, promise: Promise) {
+    processes.remove(handle.toInt())?.destroy()
     promise.resolve(null)
   }
 
-  /** Kill every spawned engine when the JS context goes away. */
+  override fun addListener(_eventName: String) {}
+
+  override fun removeListeners(_count: Double) {}
+
   override fun invalidate() {
     super.invalidate()
     for ((_, proc) in processes) proc.destroy()
     processes.clear()
+  }
+
+  private fun emit(name: String, params: WritableNativeMap) {
+    reactApplicationContext
+      .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+      .emit(name, params)
   }
 }

@@ -11,9 +11,11 @@ export interface EngineSpawnSpec {
 export type TransportFactory = (spec: EngineSpawnSpec) => Promise<EngineTransport>;
 
 /**
- * Resolve a transport factory for the current runtime:
- * React Native + native ChessEngines module -> OS process managed natively
- * (Android: ProcessBuilder from nativeLibraryDir; Windows: CreateProcess).
+ * Resolve a transport factory for the current runtime.
+ *
+ * `nativeModule` — the codegen TurboModule instance (app's spec/NativeChessEngines).
+ * When provided, engine processes are managed natively (Android: ProcessBuilder
+ * from nativeLibraryDir; Windows: CreateProcess).
  *
  * NOTE: the Node.js child_process transport lives in ./node.ts and is used
  * DIRECTLY by tests, CI smoke runs and dev tooling — it is intentionally NOT
@@ -22,12 +24,19 @@ export type TransportFactory = (spec: EngineSpawnSpec) => Promise<EngineTranspor
  * The WASM/Web Worker transport is intentionally absent until the web target
  * exists; requesting it explicitly will throw a descriptive error.
  */
-export async function resolveTransportFactory(): Promise<TransportFactory> {
+export async function resolveTransportFactory(
+  nativeModule?: ChessEnginesNativeModule,
+): Promise<TransportFactory> {
+  if (nativeModule) {
+    // Lazy require keeps the native-only module out of Node test bundles.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { createNativeTransportFactory } = require('./native') as typeof import('./native');
+    return createNativeTransportFactory(nativeModule);
+  }
   const rn = tryRequireReactNative();
-  if (rn && typeof rn.Platform !== 'undefined') {
+  if (rn) {
     const native = tryRequireNativeModule(rn);
     if (native) {
-      // Lazy require keeps the native-only module out of Node test bundles.
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { createNativeTransportFactory } = require('./native') as typeof import('./native');
       return createNativeTransportFactory(native);

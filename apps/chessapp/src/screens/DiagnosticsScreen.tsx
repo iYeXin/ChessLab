@@ -5,6 +5,7 @@ import { Pressable } from 'react-native';
 import { UciEngineDriver } from '@chesslab/engine-uci';
 import { STOCKFISH_PROFILE, PIKAFISH_PROFILE, spawnSpecFor, platformOptionsFor, shutdownEngines } from '../state/engines';
 import { resolveTransportFactory } from '@chesslab/engine-process';
+import NativeChessEngines from '../../spec/NativeChessEngines';
 import { spacing } from '../theme/tokens';
 
 type LogLine = { text: string; kind: 'cmd' | 'info' | 'ok' | 'err' };
@@ -25,7 +26,7 @@ export function DiagnosticsScreen(props: { onBack(): void }) {
     try {
       append(`== ${game} 引擎 ==`, 'cmd');
       await shutdownEngines();
-      const factory = await resolveTransportFactory();
+      const factory = await resolveTransportFactory(NativeChessEngines);
       const profile = game === 'chess' ? STOCKFISH_PROFILE : PIKAFISH_PROFILE;
       const spec = await spawnSpecFor(profile.id as 'stockfish' | 'pikafish');
       append(`spawn: ${spec.command}`);

@@ -2,6 +2,14 @@
   "name": "chessapp",
   "version": "0.0.1",
   "private": true,
+  "codegenConfig": {
+    "name": "ChessAppSpec",
+    "type": "modules",
+    "jsSrcsDir": "spec",
+    "android": {
+      "javaPackageName": "com.chessapp.spec"
+    }
+  },
   "scripts": {
     "android": "react-native run-android",
     "lint": "eslint .",

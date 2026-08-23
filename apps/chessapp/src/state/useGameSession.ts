@@ -154,6 +154,10 @@ export function useGameSession(args: {
       }
     });
 
+    // Initial board snapshot must not depend on engine startup succeeding —
+    // the board renders even while/after the engine layer fails.
+    snapshot();
+
     void session.start().catch(err => {
       setState(s => ({
         ...s,

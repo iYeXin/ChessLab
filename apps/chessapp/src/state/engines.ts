@@ -9,11 +9,11 @@ import {
 } from '@chesslab/engine-uci';
 import {
   resolveTransportFactory,
-  type ChessEnginesNativeModule,
   type EngineSpawnSpec,
 } from '@chesslab/engine-process';
 import type { AssistEngineFactory, EngineRunnerFactory } from '@chesslab/game-session';
 import type { GameType } from '@chesslab/rules-core';
+import NativeChessEngines from '../../spec/NativeChessEngines';
 
 /**
  * App-side engine wiring: resolves binary paths per platform, spawns drivers
@@ -36,24 +36,15 @@ async function resolveDirs(): Promise<NativeDirs> {
   if (!dirsPromise) {
     dirsPromise = (async () => {
       try {
-        const rn = require('react-native');
-        const mod = rn.NativeModules?.ChessEngines as ChessEnginesNativeModule & {
-          getNativeLibraryDir?: (p: any) => Promise<string>;
-          getEnginesDir?: () => Promise<string>;
+        if (Platform.OS === 'windows') {
+          return { enginesDir: await NativeChessEngines.getEnginesDir(), isNative: true };
+        }
+        return {
+          enginesDir: await NativeChessEngines.getNativeLibraryDir(),
+          isNative: true,
         };
-        if (!mod) return { enginesDir: null, isNative: false };
-        if (Platform.OS === 'windows' && mod.getEnginesDir) {
-          return { enginesDir: await mod.getEnginesDir(), isNative: true };
-        }
-        if (mod.getNativeLibraryDir) {
-          // Android: promise-based in our Kotlin module.
-          const dir: string = await new Promise<string>((resolve, reject) =>
-            (mod as any).getNativeLibraryDir(resolve, reject),
-          );
-          return { enginesDir: dir, isNative: true };
-        }
-        return { enginesDir: null, isNative: false };
-      } catch {
+      } catch (e) {
+        console.warn('[engines] dir resolution failed:', String(e));
         return { enginesDir: null, isNative: false };
       }
     })();
@@ -65,18 +56,18 @@ export async function spawnSpecFor(
   profileId: 'stockfish' | 'pikafish',
 ): Promise<EngineSpawnSpec> {
   const profile = getProfile(profileId);
-  const { enginesDir, isNative } = await resolveDirs();
+  const { enginesDir } = await resolveDirs();
   if (!enginesDir) {
     throw new Error(
-      `Engine binaries unavailable on ${Platform.OS}. ` +
-        'Run on device/emulator (Android), build via run-windows, or use `pnpm smoke:engines`.',
+      'Engine binaries unavailable — engines directory could not be resolved. ' +
+        'Expected engines next to the app binary.',
     );
   }
-  if (isNative && Platform.OS === 'android') {
+  if (Platform.OS === 'android') {
     // W^X-safe: binaries packaged as lib*.so inside nativeLibraryDir.
     return { command: `${enginesDir}/lib${profile.binaryName}.so` };
   }
-  if (isNative && Platform.OS === 'windows') {
+  if (Platform.OS === 'windows') {
     return { command: `${enginesDir}\\${profile.binaryName}.exe` };
   }
   return { command: `${enginesDir}/${profile.binaryName}` };
@@ -111,7 +102,7 @@ async function driverFor(
   if (existing && existing.isAlive) return existing;
 
   const profile: EngineProfile = getProfile(profileId);
-  const factory = await resolveTransportFactory();
+  const factory = await resolveTransportFactory(NativeChessEngines);
   const spec = await spawnSpecFor(profileId);
   const extra = await platformOptionsFor(profileId);
 

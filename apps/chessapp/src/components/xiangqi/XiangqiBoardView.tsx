@@ -36,9 +36,13 @@ export function XiangqiBoardView(props: Props) {
   // point index helpers
   const fileIdx = (f: string) => XQ_FILES.indexOf(f as (typeof XQ_FILES)[number]);
   const rankIdx = (r: string) => Number(r);
+  /** Screen y for an ICCS rank: rank0 (Red back rank) sits at the BOTTOM
+   *  when Red is at the bottom (orientation 'w'). */
+  const yOf = (rank: number) =>
+    pad + (orientation === 'w' ? 9 - rank : rank) * cellY;
   const pos = (p: BoardPoint) => ({
     x: pad + fileIdx(p.file) * cellX,
-    y: pad + rankIdx(p.rank) * cellY,
+    y: yOf(rankIdx(p.rank)),
   });
 
   const faceColor = theme.board.lightSquare;
@@ -63,7 +67,7 @@ export function XiangqiBoardView(props: Props) {
           style={{
             position: 'absolute',
             left: pad - LINE_W / 2,
-            top: pad + ri * cellY - LINE_W / 2,
+            top: yOf(ri) - LINE_W / 2,
             width: size - pad * 2 + LINE_W,
             height: LINE_W,
             backgroundColor: line,
@@ -73,8 +77,8 @@ export function XiangqiBoardView(props: Props) {
       {/* vertical lines (9), split across the river except edge files */}
       {Array.from({ length: 9 }, (_, fi) => {
         const x = pad + fi * cellX - LINE_W / 2;
-        const riverTop = pad + 4 * cellY;
-        const riverBottom = pad + 5 * cellY;
+        const riverTop = yOf(4);
+        const riverBottom = yOf(5);
         const edge = fi === 0 || fi === 8;
         return (
           <View key={`v${fi}`}>
@@ -116,16 +120,19 @@ export function XiangqiBoardView(props: Props) {
         }}
       />
 
-      {/* palace diagonals */}
-      <PalaceDiagonals pad={pad} cellX={cellX} cellY={cellY} line={line} top={false} />
-      <PalaceDiagonals pad={pad} cellX={cellX} cellY={cellY} line={line} top={true} />
+      {/* palace diagonals: palace spans ranks 0-2 (Red) and 7-9 (Black);
+          yBase is the palace's TOP edge on screen. */}
+      <PalaceDiagonals pad={pad} cellX={cellX} cellY={cellY} line={line}
+        yBase={orientation === 'w' ? yOf(2) : yOf(9)} />
+      <PalaceDiagonals pad={pad} cellX={cellX} cellY={cellY} line={line}
+        yBase={orientation === 'w' ? yOf(9) : yOf(2)} />
 
       {/* river captions */}
       <View
         style={{
           position: 'absolute',
           left: 0,
-          top: pad + 4 * cellY,
+          top: yOf(5),
           width: size,
           height: cellY,
           flexDirection: 'row',
@@ -221,16 +228,16 @@ function PalaceDiagonals({
   cellX,
   cellY,
   line,
-  top,
+  yBase,
 }: {
   pad: number;
   cellX: number;
   cellY: number;
   line: string;
-  top: boolean;
+  /** Screen y of the palace's TOP edge. */
+  yBase: number;
 }) {
-  // Palace spans files d-f (idx 3-5), ranks 0-2 (red bottom) or 7-9 (top).
-  const yBase = top ? pad + 7 * cellY : pad + 0;
+  // Palace spans files d-f (idx 3-5), two cells tall.
   const xL = pad + 3 * cellX;
   const w = cellX * 2;
   const h = cellY * 2;
@@ -242,12 +249,12 @@ function PalaceDiagonals({
       pointerEvents="none"
       style={{
         position: 'absolute',
-        left: flip ? xL : xL,
-        top: flip ? yBase : yBase,
+        left: xL,
+        top: flip ? yBase + h : yBase,
         width: len,
         height: LINE_W,
         backgroundColor: line,
-        transform: [{ translateX: 0 }, { translateY: flip ? h : 0 }, { rotate: `${flip ? -angle : angle}deg` }],
+        transform: [{ rotate: `${flip ? -angle : angle}deg` }],
         transformOrigin: flip ? '0 100%' : '0 0',
       }}
     />
