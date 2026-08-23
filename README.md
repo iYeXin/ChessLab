@@ -50,10 +50,24 @@ pnpm windows            # 构建 Windows 应用（需 VS2026 >=18.6）
   通过 `EvalFile` 指向该绝对路径。
 - **pnpm 兼容**：`@react-native/gradle-plugin` 与 `@react-native-windows/cli`
   必须显式声明为 app 的依赖；gradle-plugin 带 foojay 0.5.0→1.0.0 补丁
-  （`patches/`，RN 官方 bug，见 docs §7）。
+  （`patches/`，RN 官方 bug #56287，见 docs §7）。
 - **JDK**：Gradle 9 无法运行在 Java 25 上，`android/gradle.properties` 已固定
   Temurin 21（`org.gradle.java.home`）。
-- **Windows**：RNW 0.84 要求 VS2026 ≥18.6 与 PowerShell 7 (`pwsh`)。
+- **Windows**：
+  - RNW 0.84 要求 VS2026 ≥18.6 与 PowerShell 7 (`pwsh`)；本机 VS 通道尚未推到
+    18.6 时，可绕过 CLI 版本门禁直接 MSBuild（本仓库已验证可编过 exe）：
+
+    ```powershell
+    msbuild apps\chessapp\windows\chessapp.sln -t:Restore,Build `
+      -p:Configuration=Debug -p:Platform=x64 `
+      -p:WindowsTargetPlatformVersion=10.0.26100.0 -p:TargetPlatformVersion=10.0.26100.0
+    ```
+
+    （第二个属性覆盖 `chessapp.Package.wapproj` 的默认 SDK 22621——本机只装了
+    26100；装了 22621 SDK 则无需覆盖。）
+  - 原生模块为 attributed TurboModule：见
+    `apps/chessapp/windows/chessapp/ChessEnginesModule.h`，由 `chessapp.cpp`
+    include 后经 `AddAttributedModules` 注册，无需 codegen。
 
 ## 后端验证状态
 
@@ -64,4 +78,4 @@ pnpm windows            # 构建 Windows 应用（需 VS2026 >=18.6）
 | Stockfish 18 真实握手+搜索（一步杀 h1h8） | ✅ |
 | Pikafish 真实握手+EvalFile+开局搜索（h2e2 中炮） | ✅ |
 | 象棋 perft d1/d2 与 Pikafish 一致（44/1920） | ✅（d3 有上游分歧，已记录）|
-| Windows C++ 模块编译 | ⏳ 待 VS 升级完成后 run-windows 验证 |
+| Windows C++ 模块编译 + .msix 打包 | ✅ MSBuild x64 Debug 全绿 |
