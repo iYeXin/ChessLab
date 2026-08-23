@@ -21,6 +21,21 @@ export function HomeScreen(props: {
   const [difficulty, setDifficulty] = useState<1 | 2 | 3 | 4 | 5>(2);
   const [side, setSide] = useState<Side>('w');
 
+  // TEMP-DIAG: TurboModule lookup probe
+  React.useEffect(() => {
+    const TM = require('react-native/Libraries/TurboModule/TurboModuleRegistry');
+    try {
+      console.log('[diag] AppState TM:', !!TM.get('AppState'));
+    } catch (e) {
+      console.log('[diag] AppState ERR:', String(e));
+    }
+    try {
+      console.log('[diag] ChessEngines TM:', !!TM.get('ChessEngines'));
+    } catch (e) {
+      console.log('[diag] ChessEngines ERR:', String(e).slice(0, 120));
+    }
+  }, []);
+
   return (
     <SafeAreaView style={styles.root}>
       <ScrollView contentContainerStyle={styles.content}>

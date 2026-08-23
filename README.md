@@ -1,5 +1,10 @@
 # ChessLab
 
+> 🚧 **架构迁移中**：客户端正从 React Native 切换至 **Tauri 2 + React**（决策与规划见
+> [docs/02-tauri-migration.md](docs/02-tauri-migration.md)）。
+> `packages/*` 纯 TS 后端不受影响、直接复用；`apps/chessapp`（RN）已冻结为参考实现。
+> 下文部分命令（android/windows/start）属 RN 线，迁移完成后更新。
+
 双棋种单机对弈软件 —— 国际象棋（Stockfish 18）+ 中国象棋（Pikafish）。
 React Native monorepo，目标平台 **Android + Windows**。
 
