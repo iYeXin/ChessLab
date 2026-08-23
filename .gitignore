@@ -1,0 +1,33 @@
+# dependencies
+node_modules/
+
+# builds
+dist/
+build/
+*.tsbuildinfo
+
+# react-native / android
+apps/*/android/app/build/
+apps/*/android/build/
+apps/*/android/.gradle/
+apps/*/android/local.properties
+apps/*/android/app/src/main/jniLibs/
+*.keystore
+!debug.keystore
+
+# react-native-windows
+apps/*/windows/AppPackages/
+apps/*/windows/bin/
+apps/*/windows/obj/
+apps/*/windows/.vs/
+
+# engines / third_party artifacts (fetched by scripts, never committed)
+third_party/
+*.nnue
+
+# misc
+.DS_Store
+*.log
+.env
+.vite/
+coverage/

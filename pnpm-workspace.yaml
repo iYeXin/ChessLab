@@ -1,0 +1,10 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# pnpm 11+: allowlist for dependency build scripts.
+allowBuilds:
+  esbuild: true
+
+patchedDependencies:
+  '@react-native/gradle-plugin@0.84.1': patches/@react-native__gradle-plugin@0.84.1.patch

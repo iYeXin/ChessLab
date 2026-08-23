@@ -1,0 +1,67 @@
+# ChessLab
+
+双棋种单机对弈软件 —— 国际象棋（Stockfish 18）+ 中国象棋（Pikafish）。
+React Native monorepo，目标平台 **Android + Windows**。
+
+> 技术选型理由、调研结论与已知债务见 [docs/01-tech-selection.md](docs/01-tech-selection.md)。
+
+## 工程结构
+
+```
+packages/
+  rules-core        规则层共享抽象：RulesAdapter / Side('w'|'b') / UCI 坐标着法
+  rules-chess       国际象棋规则（chess.js 封装）
+  rules-xiangqi     中国象棋规则（vendor xiangqi.js + 自维护补丁）
+  engine-uci        UCI 协议解析/构造、UciEngineDriver（握手·选项·串行搜索）
+  engine-process    EngineTransport 适配器：Node | RN原生桥 (Android/Windows) | WASM(未来)
+  game-session      对局编排：GameSession 状态机、GameClock、EngineTurnRunner
+  persistence       GameRepository 接口 + memory/node-file 实现
+apps/chessapp        RN 应用壳
+  android/          含 ChessEnginesModule.kt（ProcessBuilder 引擎桥）
+  windows/          RNW 工程 + ChessEnginesModule.h（CreateProcess 引擎桥）
+scripts/            引擎下载/jniLibs 同步/冒烟测试/perft 探针
+third_party/        引擎二进制缓存（不入库）
+docs/               决策文档
+```
+
+分层依赖单向向下，UI 之下全部是零 React 依赖的纯 TS 包。
+
+## 常用命令
+
+```powershell
+pnpm install            # 安装依赖（workspace）
+pnpm test               # 全部单元测试（48 个）
+pnpm typecheck          # tsc -b
+pnpm fetch:engines      # 下载官方引擎到 third_party/engines（含解压/清单）
+pnpm smoke:engines      # 用真实二进制跑 UCI 握手+搜索冒烟测试
+pnpm sync:jniLibs       # 把 Android arm64 引擎拷入 jniLibs（lib*.so 形式）
+pnpm tsx scripts/probe-perft.ts   # 引擎 perft 权威值探针（sf|pf|省略=全部）
+
+pnpm start              # Metro dev server
+pnpm android            # 构建并安装 Android 应用
+pnpm windows            # 构建 Windows 应用（需 VS2026 >=18.6）
+```
+
+## 平台注意事项（踩坑记录）
+
+- **Android 引擎执行**：targetSdk>=29 禁止 exec 应用数据目录文件；本工程把引擎以
+  `lib<name>.so` 放进 jniLibs 并开启 `useLegacyPackaging`，运行时从
+  `nativeLibraryDir` 启动。Pikafish 的 NNUE 同法打包为 `libpikafish_nnue.so`，
+  通过 `EvalFile` 指向该绝对路径。
+- **pnpm 兼容**：`@react-native/gradle-plugin` 与 `@react-native-windows/cli`
+  必须显式声明为 app 的依赖；gradle-plugin 带 foojay 0.5.0→1.0.0 补丁
+  （`patches/`，RN 官方 bug，见 docs §7）。
+- **JDK**：Gradle 9 无法运行在 Java 25 上，`android/gradle.properties` 已固定
+  Temurin 21（`org.gradle.java.home`）。
+- **Windows**：RNW 0.84 要求 VS2026 ≥18.6 与 PowerShell 7 (`pwsh`)。
+
+## 后端验证状态
+
+| 验证项 | 结果 |
+|---|---|
+| 单元测试（协议/驱动/两棋种规则/会话/持久化） | ✅ 48/48 |
+| typecheck（strict, noUncheckedIndexedAccess） | ✅ |
+| Stockfish 18 真实握手+搜索（一步杀 h1h8） | ✅ |
+| Pikafish 真实握手+EvalFile+开局搜索（h2e2 中炮） | ✅ |
+| 象棋 perft d1/d2 与 Pikafish 一致（44/1920） | ✅（d3 有上游分歧，已记录）|
+| Windows C++ 模块编译 | ⏳ 待 VS 升级完成后 run-windows 验证 |
