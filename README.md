@@ -48,9 +48,11 @@ pnpm windows            # 构建 Windows 应用（需 VS2026 >=18.6）
   `lib<name>.so` 放进 jniLibs 并开启 `useLegacyPackaging`，运行时从
   `nativeLibraryDir` 启动。Pikafish 的 NNUE 同法打包为 `libpikafish_nnue.so`，
   通过 `EvalFile` 指向该绝对路径。
-- **pnpm 兼容**：`@react-native/gradle-plugin` 与 `@react-native-windows/cli`
-  必须显式声明为 app 的依赖；gradle-plugin 带 foojay 0.5.0→1.0.0 补丁
-  （`patches/`，RN 官方 bug #56287，见 docs §7）。
+- **pnpm 兼容**：`@react-native/gradle-plugin`、`@react-native-windows/cli`、
+  `@react-native/codegen` 必须显式声明为 app 的依赖（库会用相对路径或插件扫描
+  找它们，pnpm 隔离布局下不提升即失败）；gradle-plugin 带 foojay 0.5.0→1.0.0 补丁
+  （`patches/`，RN 官方 bug #56287）；另在 `pnpm-workspace.yaml` 提升 `@babel/*`
+  以兼容 codegen 的幽灵依赖。
 - **JDK**：Gradle 9 无法运行在 Java 25 上，`android/gradle.properties` 已固定
   Temurin 21（`org.gradle.java.home`）。
 - **Windows**：
