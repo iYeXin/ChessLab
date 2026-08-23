@@ -12,9 +12,12 @@ export type TransportFactory = (spec: EngineSpawnSpec) => Promise<EngineTranspor
 
 /**
  * Resolve a transport factory for the current runtime:
- * 1. React Native + native ChessEngines module -> OS process managed natively
- *    (Android: ProcessBuilder from nativeLibraryDir; Windows: CreateProcess).
- * 2. Plain Node (unit tests, CI smoke runs, desktop dev tools) -> child_process.
+ * React Native + native ChessEngines module -> OS process managed natively
+ * (Android: ProcessBuilder from nativeLibraryDir; Windows: CreateProcess).
+ *
+ * NOTE: the Node.js child_process transport lives in ./node.ts and is used
+ * DIRECTLY by tests, CI smoke runs and dev tooling — it is intentionally NOT
+ * imported here so bundlers never pull `node:child_process` into an app.
  *
  * The WASM/Web Worker transport is intentionally absent until the web target
  * exists; requesting it explicitly will throw a descriptive error.
@@ -24,6 +27,7 @@ export async function resolveTransportFactory(): Promise<TransportFactory> {
   if (rn && typeof rn.Platform !== 'undefined') {
     const native = tryRequireNativeModule(rn);
     if (native) {
+      // Lazy require keeps the native-only module out of Node test bundles.
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { createNativeTransportFactory } = require('./native') as typeof import('./native');
       return createNativeTransportFactory(native);
@@ -33,8 +37,10 @@ export async function resolveTransportFactory(): Promise<TransportFactory> {
         'Did the native ChessEngines module get linked into this build?',
     );
   }
-  const { createNodeTransportFactory } = await import('./node');
-  return createNodeTransportFactory();
+  throw new Error(
+    'No engine transport for this runtime. ' +
+      'In Node contexts use createNodeTransportFactory from ./node directly.',
+  );
 }
 
 function tryRequireReactNative(): any | null {

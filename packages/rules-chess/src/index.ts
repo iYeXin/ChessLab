@@ -5,6 +5,8 @@ import {
   type GameResult,
   type HistoryEntry,
   type LegalMove,
+  type Piece,
+  type PieceType,
   type RulesAdapter,
   type Side,
   type Square,
@@ -73,6 +75,12 @@ export class ChessRules implements RulesAdapter {
 
   isCheck(): boolean {
     return this.c.isCheck();
+  }
+
+  pieceAt(square: Square): Piece | null {
+    const p = this.c.get(square as never);
+    if (!p) return null;
+    return { type: p.type as PieceType, side: p.color as Side };
   }
 
   result(): GameResult | null {

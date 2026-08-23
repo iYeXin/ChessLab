@@ -29,6 +29,9 @@ importers:
 
   apps/chessapp:
     dependencies:
+      '@babel/runtime':
+        specifier: ^7.25.0
+        version: 7.29.7
       '@chesslab/engine-process':
         specifier: workspace:*
         version: link:../../packages/engine-process
@@ -72,9 +75,6 @@ importers:
       '@babel/preset-env':
         specifier: ^7.25.3
         version: 7.29.7(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1)
-      '@babel/runtime':
-        specifier: ^7.25.0
-        version: 7.29.7
       '@react-native-community/cli':
         specifier: 20.1.0
         version: 20.1.0(supports-color@8.1.1)(typescript@5.9.3)

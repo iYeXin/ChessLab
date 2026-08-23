@@ -5,6 +5,8 @@ import {
   type GameResult,
   type HistoryEntry,
   type LegalMove,
+  type Piece,
+  type PieceType,
   type RulesAdapter,
   type Side,
   type Square,
@@ -71,6 +73,14 @@ export class XiangqiRules implements RulesAdapter {
 
   isCheck(): boolean {
     return this.g.in_check();
+  }
+
+  pieceAt(square: Square): Piece | null {
+    const p = this.g.get(square);
+    if (!p) return null;
+    // Vendor colors: 'r'(red)/'b' — red is our normalized 'w' (first mover).
+    const side: Side = p.color === 'r' ? 'w' : 'b';
+    return { type: p.type as PieceType, side };
   }
 
   result(): GameResult | null {

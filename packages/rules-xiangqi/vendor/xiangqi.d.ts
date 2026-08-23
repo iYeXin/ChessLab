@@ -31,6 +31,7 @@ export interface XiangqiGame {
   moves(options?: XiangqiMovesOptions): XiangqiPrettyMove[] | string[];
   move(move: string | { from: string; to: string }): XiangqiPrettyMove | null;
   undo(): XiangqiPrettyMove | null;
+  get(square: string): { type: string; color: XiangqiColor } | null;
   in_check(): boolean;
   in_checkmate(): boolean;
   in_stalemate(): boolean;

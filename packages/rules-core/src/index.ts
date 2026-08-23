@@ -60,6 +60,17 @@ export interface HistoryEntry {
   san: string;
 }
 
+export type PieceType =
+  // chess
+  | 'k' | 'q' | 'r' | 'b' | 'n' | 'p'
+  // xiangqi extras ('b' is shared: bishop/象-相)
+  | 'a' | 'c';
+
+export interface Piece {
+  type: PieceType;
+  side: Side;
+}
+
 /**
  * Uniform façade over per-game rule implementations. One instance represents
  * one live game; use `clone()` for speculative branches (hints, analysis).
@@ -89,6 +100,9 @@ export interface RulesAdapter {
   undo(): boolean;
 
   isCheck(): boolean;
+
+  /** Piece on a square, or null when empty. Board lookup for rendering. */
+  pieceAt(square: Square): Piece | null;
 
   /** Terminal state, or null while the game is ongoing. */
   result(): GameResult | null;
