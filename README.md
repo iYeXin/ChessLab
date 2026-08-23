@@ -75,9 +75,23 @@ pnpm windows            # 构建 Windows 应用（需 VS2026 >=18.6）
 
 | 验证项 | 结果 |
 |---|---|
-| 单元测试（协议/驱动/两棋种规则/会话/持久化） | ✅ 48/48 |
+| 单元测试（协议/驱动/两棋种规则/会话/持久化/辅助分析） | ✅ 55/55 |
 | typecheck（strict, noUncheckedIndexedAccess） | ✅ |
 | Stockfish 18 真实握手+搜索（一步杀 h1h8） | ✅ |
 | Pikafish 真实握手+EvalFile+开局搜索（h2e2 中炮） | ✅ |
 | 象棋 perft d1/d2 与 Pikafish 一致（44/1920） | ✅（d3 有上游分歧，已记录）|
 | Windows C++ 模块编译 + .msix 打包 | ✅ MSBuild x64 Debug 全绿 |
+
+## 辅助着棋（后端已就绪）
+
+三层能力，UI 阶段按需接入：
+
+| 层级 | 能力 | 接口 |
+|---|---|---|
+| L1 提示 | 一次性最佳着法建议 | `session.hint()` → `LegalMove`（引擎实例复用，不逐次冷启动） |
+| L2 常驻辅助 | 开关打开后持续 infinite 搜索，输出 top-N 候选 + cp/mate 评估 | `session.enableAssist({multiPv})` / `disableAssist()`；订阅 `assist` 事件拿 `AssistLine[]` |
+| L3 失误反馈 | 相邻两次评估落差 = 走子质量 | 由 L2 数据推导，纯前端计算 |
+
+关键设计：辅助引擎是**独立于对手引擎的进程**（UCI 单进程仅允许一个活动搜索；
+且提示强度恒定满级、不受对手难度影响）。局面变化（含悔棋）与终局由
+`GameSession` 自动驱动启停，UI 只消费事件。

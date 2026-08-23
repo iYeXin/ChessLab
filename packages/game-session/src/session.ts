@@ -7,6 +7,7 @@ import type {
   Side,
 } from '@chesslab/rules-core';
 import { GameClock, type ClockState, type TimeControlMs } from './clock';
+import type { AssistEngine, AssistEngineFactory, AssistSnapshot } from './analysis';
 import type { EngineRunnerFactory, EngineTurnRunner } from './runner';
 
 export type PlayerConfig =
@@ -28,6 +29,7 @@ export type SessionEvent =
   | { kind: 'thinking'; side: Side }
   | { kind: 'engineInfo'; side: Side; info: EngineInfo }
   | { kind: 'clock'; state: ClockState }
+  | { kind: 'assist'; lines: AssistSnapshot }
   | { kind: 'result'; result: GameResult }
   | { kind: 'error'; error: Error };
 
@@ -41,6 +43,11 @@ export interface SessionOptions {
    * drivers; tests pass scripted fakes.
    */
   engineRunnerFactory?: EngineRunnerFactory;
+  /**
+   * Creates the dedicated assist/hint analysis engine (independent process
+   * from the game opponent — see packages/game-session/src/analysis.ts).
+   */
+  analysisFactory?: AssistEngineFactory;
 }
 
 /**
@@ -60,6 +67,9 @@ export class GameSession {
   private started = false;
   private disposed = false;
   private engineThinking: Side | null = null;
+  private assist: AssistEngine | null = null;
+  private assistOn = false;
+  private hintRunner: EngineTurnRunner | null = null;
 
   constructor(private opts: SessionOptions) {}
 
@@ -93,6 +103,15 @@ export class GameSession {
     this.disposed = true;
     this.engineThinking = null;
     this.clock?.dispose();
+    if (this.assist) {
+      await this.assist.dispose().catch(() => undefined);
+      this.assist = null;
+      this.assistOn = false;
+    }
+    if (this.hintRunner) {
+      await this.hintRunner.dispose().catch(() => undefined);
+      this.hintRunner = null;
+    }
     for (const r of this.runners.values()) await r.dispose().catch(() => undefined);
     this.runners.clear();
     this.listeners.clear();
@@ -153,24 +172,62 @@ export class GameSession {
     return removed > 0;
   }
 
-  /** Quick one-shot suggestion for the current position (analysis helper). */
+  /**
+   * Quick one-shot suggestion for the current position (L1 hint).
+   * The engine instance is created lazily and REUSED across calls — spawning
+   * a UCI process per hint would cost 1-2s each time.
+   */
   async hint(movetimeMs = 700): Promise<LegalMove | null> {
     const factory = this.opts.engineRunnerFactory;
     if (!factory) return null;
     const profileId = this.opts.rules.gameType === 'chess' ? 'stockfish' : 'pikafish';
-    const runner = await factory({ profileId, strengthLevel: 20 });
+    this.hintRunner ??= await factory({ profileId, strengthLevel: 20 });
     try {
-      const { bestmove } = await runner.requestMove({
+      const { bestmove } = await this.hintRunner.requestMove({
         fen: this.rules.fen(),
         moves: [],
         level: 20,
         clock: { remainingMs: movetimeMs },
-        onInfo: undefined,
       });
+      void movetimeMs;
       return bestmove ? (this.rules.moves().find(m => m.uci === bestmove) ?? null) : null;
-    } finally {
-      await runner.dispose().catch(() => undefined);
+    } catch (err) {
+      // A dead hint engine must not poison future hints.
+      await this.hintRunner.dispose().catch(() => undefined);
+      this.hintRunner = null;
+      throw err;
     }
+  }
+
+  // ---- assist mode ("辅助着棋", L2) ---------------------------------------
+
+  /**
+   * Turn on continuous analysis of the position on the move. Requires
+   * `opts.analysisFactory`. Emits `assist` events with top-N lines.
+   */
+  async enableAssist(opts?: { multiPv?: number }): Promise<void> {
+    if (!this.opts.analysisFactory) {
+      throw new Error('enableAssist requires SessionOptions.analysisFactory');
+    }
+    if (!this.assist) {
+      this.assist = await this.opts.analysisFactory();
+      this.assist.onLines(lines => {
+        if (this.assistOn && !this.over && !this.disposed) {
+          this.emit({ kind: 'assist', lines });
+        }
+      });
+    }
+    this.assistOn = true;
+    this.assist.begin(this.rules.fen(), opts);
+  }
+
+  disableAssist(): void {
+    this.assistOn = false;
+    this.assist?.stop();
+  }
+
+  get assistEnabled(): boolean {
+    return this.assistOn;
   }
 
   // ---- introspection --------------------------------------------------------
@@ -201,6 +258,11 @@ export class GameSession {
 
   private emit(e: SessionEvent): void {
     for (const fn of [...this.listeners]) fn(e);
+    // Assist mode follows every position change: 'started' + each 'turn'
+    // (turn fires after moves AND after undo, so both stay covered).
+    if (this.assistOn && this.assist && (e.kind === 'turn' || e.kind === 'started')) {
+      this.assist.begin(this.rules.fen());
+    }
   }
 
   private applyMove(uci: MoveUci): boolean {
@@ -288,6 +350,7 @@ export class GameSession {
     this.result = result;
     this.clock?.stop();
     this.cancelEngineThinking();
+    if (this.assistOn) this.assist?.stop(); // game over — halt analysis
     this.emit({ kind: 'result', result });
   }
 
