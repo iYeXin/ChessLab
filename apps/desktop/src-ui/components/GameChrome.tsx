@@ -289,12 +289,15 @@ export function AssistPanel(props: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 'var(--sp-m)',
-        margin: '0 var(--sp-l) var(--sp-s)',
         borderWidth: 1,
         borderStyle: 'solid',
         borderColor: theme.accentSoft,
         borderRadius: 8,
         padding: '6px var(--sp-m)',
+        minHeight: 32,
+        height: 32,
+        overflow: 'hidden',
+        boxSizing: 'border-box',
       }}
     >
       <span style={{ color: theme.accent, fontSize: 10, fontWeight: 800, letterSpacing: 1 }}>

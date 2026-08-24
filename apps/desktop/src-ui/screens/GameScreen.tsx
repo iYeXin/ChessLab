@@ -336,10 +336,20 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
           ))}
       </div>
 
-      {actions.assistOn && capabilities.assist ? <AssistPanel theme={theme} lines={state.assistLines} historyLast={lastEntry} /> : null}
-
-      {/* Eve live analysis (item 8) - show assist-like live PV during engine vs engine */}
-      {capabilities.isEngineVsEngine && state.assistLines.length > 0 ? <AssistPanel theme={theme} lines={state.assistLines} historyLast={lastEntry} /> : null}
+      {/* Assist area: fixed height to avoid jitter in 双机 */}
+      <div style={{ height: 38, minHeight: 38, margin: '0 var(--sp-l)', display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
+        {capabilities.isEngineVsEngine ? (
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <AssistPanel theme={theme} lines={state.assistLines} historyLast={lastEntry} />
+          </div>
+        ) : actions.assistOn && capabilities.assist ? (
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <AssistPanel theme={theme} lines={state.assistLines} historyLast={lastEntry} />
+          </div>
+        ) : (
+          <div style={{ flex: 1 }} />
+        )}
+      </div>
 
       <ControlsBar theme={theme} controls={controls} />
 
