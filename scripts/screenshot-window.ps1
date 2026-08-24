@@ -8,17 +8,13 @@ param(
 )
 
 Add-Type -AssemblyName System.Drawing
-# Make process DPI-aware so GetWindowRect/PrintWindow return physical pixels correctly at 150%/125% scaling.
-try { Add-Type @"
-using System;using System.Runtime.InteropServices;
-public class DPI { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); }
-"@ -ErrorAction Stop; [DPI]::SetProcessDPIAware() | Out-Null } catch {}
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
 public class Win32 {
     [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+    [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr hWnd);
     public struct RECT { public int Left, Top, Right, Bottom; }
 }
 "@
@@ -38,6 +34,14 @@ $rect = New-Object Win32+RECT
 [Win32]::GetWindowRect($proc.MainWindowHandle, [ref]$rect) | Out-Null
 $w = $rect.Right - $rect.Left
 $h = $rect.Bottom - $rect.Top
+# Handle 150%/125% system scaling: GetWindowRect returns logical size, but PrintWindow renders at physical.
+$dpi = 96
+try { $d = [Win32]::GetDpiForWindow($proc.MainWindowHandle); if ($d -gt 0) { $dpi = $d } } catch {}
+if ($dpi -ne 96) {
+  $scale = $dpi / 96
+  $w = [int]($w * $scale)
+  $h = [int]($h * $scale)
+}
 if ($w -le 0 -or $h -le 0) { Write-Error "bad window rect"; exit 1 }
 
 # PrintWindow (PW_RENDERFULLCONTENT) reads the window's own surface —

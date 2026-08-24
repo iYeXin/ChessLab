@@ -10,11 +10,7 @@ type Route =
   | { name: 'diagnostics' };
 
 export function App() {
-  // TEMP-DIAG: start directly on the game screen for screenshot iteration.
-  const [route, setRoute] = useState<Route>({
-    name: 'game',
-    cfg: { gameType: 'xiangqi', humanSide: 'w', difficulty: 2 },
-  });
+  const [route, setRoute] = useState<Route>({ name: 'home' });
 
   switch (route.name) {
     case 'home':

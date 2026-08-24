@@ -76,8 +76,9 @@ export function XiangqiBoardView(props: Props) {
       {/* vertical lines (9), split across the river except edge files */}
       {Array.from({ length: 9 }, (_, fi) => {
         const x = pad + fi * cellX - LINE_W / 2;
-        const riverTop = yOf(4);
-        const riverBottom = yOf(5);
+        const riverTop = Math.min(yOf(4), yOf(5));
+        const riverBottom = Math.max(yOf(4), yOf(5));
+        const topEdge = Math.min(yOf(0), yOf(9));
         const edge = fi === 0 || fi === 8;
         return (
           <React.Fragment key={`v${fi}`}>
@@ -85,9 +86,9 @@ export function XiangqiBoardView(props: Props) {
               style={{
                 position: 'absolute',
                 left: x,
-                top: pad - LINE_W / 2,
+                top: topEdge - LINE_W / 2,
                 width: LINE_W,
-                height: edge ? cellY * 9 : cellY * 4,
+                height: edge ? cellY * 9 : riverTop - topEdge,
                 backgroundColor: line,
               }}
             />
@@ -98,7 +99,7 @@ export function XiangqiBoardView(props: Props) {
                   left: x,
                   top: riverBottom - LINE_W / 2,
                   width: LINE_W,
-                  height: cellY * 4,
+                  height: topEdge + cellY * 9 - riverBottom,
                   backgroundColor: line,
                 }}
               />
@@ -111,9 +112,9 @@ export function XiangqiBoardView(props: Props) {
         style={{
           position: 'absolute',
           left: pad - 4,
-          top: pad - 4,
+          top: Math.min(yOf(0), yOf(9)) - 4,
           width: size - pad * 2 + 8,
-          height: cellY * 9 + 8,
+          height: Math.abs(yOf(9) - yOf(0)) + 8,
           borderWidth: LINE_W + 0.5,
           borderStyle: 'solid',
           borderColor: line,
@@ -128,14 +129,14 @@ export function XiangqiBoardView(props: Props) {
         cellX={cellX}
         cellY={cellY}
         line={line}
-        yBase={orientation === 'w' ? yOf(2) : yOf(9)}
+        yBase={orientation === 'w' ? yOf(2) : yOf(0)}
       />
       <PalaceDiagonals
         pad={pad}
         cellX={cellX}
         cellY={cellY}
         line={line}
-        yBase={orientation === 'w' ? yOf(9) : yOf(2)}
+        yBase={orientation === 'w' ? yOf(9) : yOf(7)}
       />
 
       {/* river captions */}
@@ -143,7 +144,7 @@ export function XiangqiBoardView(props: Props) {
         style={{
           position: 'absolute',
           left: 0,
-          top: yOf(5),
+          top: Math.min(yOf(4), yOf(5)),
           width: size,
           height: cellY,
           display: 'flex',
