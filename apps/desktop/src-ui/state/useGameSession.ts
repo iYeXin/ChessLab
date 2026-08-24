@@ -52,13 +52,19 @@ export interface SessionActions {
   hint(): Promise<LegalMove | null>;
   enableAssist(): Promise<void>;
   disableAssist(): void;
+  /** For 观战步进 mode: advance one engine ply */
+  step(): boolean;
 }
+
+export type GameMode = 'pve' | 'pvp' | 'eve';
 
 /** Feature availability derived from injected factories (drives UI disabling). */
 export interface SessionCapabilities {
   hints: boolean;
   assist: boolean;
   engineOpponent: boolean;
+  isEngineVsEngine: boolean;
+  isStepMode: boolean;
 }
 
 const DIFFICULTY_LEVELS = [2, 6, 10, 14, 18] as const;
@@ -74,8 +80,11 @@ export function levelForDifficulty(difficulty: 1 | 2 | 3 | 4 | 5): number {
 export function useGameSession(args: {
   gameKey: number;
   gameType: GameType;
+  mode: GameMode;
   humanSide: Side;
   difficulty: 1 | 2 | 3 | 4 | 5;
+  difficultySecond?: 1 | 2 | 3 | 4 | 5;
+  stepMode?: boolean;
   /** W2: Tauri transport factories; omit for local two-player mode. */
   factories?: {
     engineRunnerFactory: EngineRunnerFactory;
@@ -87,7 +96,7 @@ export function useGameSession(args: {
   capabilities: SessionCapabilities;
   sessionRef: React.RefObject<GameSession | null>;
 } {
-  const { gameKey, gameType, humanSide, difficulty, factories } = args;
+  const { gameKey, gameType, mode, humanSide, difficulty, difficultySecond, stepMode, factories } = args;
 
   const [state, setState] = useState<SessionUiState>({
     pieces: {},
@@ -107,14 +116,22 @@ export function useGameSession(args: {
     let unsub: (() => void) | null = null;
     setState(s => ({ ...s, bootError: null }));
 
-    // In local mode both sides are humans — the rules layer alone drives the
-    // game and the board is fully playable without any engine process.
+    const profileId = gameType === 'chess' ? 'stockfish' : 'pikafish';
+    const autoPlay = !(mode === 'eve' && stepMode);
+
     const playerFor = (side: Side) => {
+      if (mode === 'pvp') return { kind: 'human', side } as const;
+      if (mode === 'eve') {
+        if (!factories) return { kind: 'human', side } as const;
+        const lvl = side === 'w' ? levelForDifficulty(difficulty) : levelForDifficulty(difficultySecond ?? difficulty);
+        return { kind: 'engine', side, profileId, strengthLevel: lvl } as const;
+      }
+      // pve
       if (!factories || side === humanSide) return { kind: 'human', side } as const;
       return {
         kind: 'engine',
         side,
-        profileId: gameType === 'chess' ? 'stockfish' : 'pikafish',
+        profileId,
         strengthLevel: levelForDifficulty(difficulty),
       } as const;
     };
@@ -123,7 +140,8 @@ export function useGameSession(args: {
       rules: gameType === 'chess' ? new ChessRules() : new XiangqiRules(),
       white: playerFor('w'),
       black: playerFor('b'),
-      ...(factories ?? {}),
+      autoPlay,
+      ...(factories ? { engineRunnerFactory: factories.engineRunnerFactory, analysisFactory: factories.analysisFactory } : {}),
     });
     sessionRef.current = session;
 
@@ -208,7 +226,9 @@ export function useGameSession(args: {
       resign: () => {
         const s = sessionRef.current;
         if (!s) return;
-        s.resign(humanSide);
+        // In eve mode, resign the side to move; otherwise human side
+        const toResign = mode === 'eve' ? (s.rules.turn() as Side) : humanSide;
+        s.resign(toResign);
       },
       hint: async () => (await sessionRef.current?.hint()) ?? null,
       enableAssist: async () => {
@@ -220,18 +240,21 @@ export function useGameSession(args: {
         setAssistOn(false);
         setState(s => ({ ...s, assistLines: [] }));
       },
+      step: () => sessionRef.current?.step() ?? false,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [humanSide],
+    [humanSide, mode],
   );
 
   const capabilities: SessionCapabilities = useMemo(
     () => ({
-      hints: !!factories?.engineRunnerFactory,
-      assist: !!factories?.analysisFactory,
-      engineOpponent: !!factories,
+      hints: mode === 'pve' && !!factories?.engineRunnerFactory,
+      assist: mode !== 'pvp' && !!factories?.analysisFactory,
+      engineOpponent: mode === 'pve' && !!factories,
+      isEngineVsEngine: mode === 'eve',
+      isStepMode: !!(mode === 'eve' && stepMode),
     }),
-    [factories],
+    [factories, mode, stepMode],
   );
 
   return {

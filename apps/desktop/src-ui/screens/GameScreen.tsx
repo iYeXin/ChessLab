@@ -14,46 +14,45 @@ import {
 } from '../components/GameChrome';
 import { useGameSession } from '../state/useGameSession';
 import { makeSessionFactories, shutdownEngines } from '../state/engines';
-
-/**
- * DOM port of apps/chessapp/src/screens/GameScreen.tsx.
- * Phase W2: Tauri engine bridge enabled — human vs engine with full
- * hint/assist. Falls back to local two-player if the engine fails to spawn.
- */
+import { useSettings } from '../state/settings';
+import type { StartConfig } from './HomeScreen';
 
 const DIFF_LABEL = ['', '入门', '业余', '进阶', '大师', '特级'] as const;
 
-export function GameScreen(props: {
-  gameType: GameType;
-  humanSide: Side;
-  difficulty: 1 | 2 | 3 | 4 | 5;
-  onExit(): void;
-}) {
-  const theme = themeFor(props.gameType);
+export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
+  const { cfg } = props;
+  const theme = themeFor(cfg.gameType);
+  const { settings } = useSettings();
   const [gameKey, setGameKey] = useState(1);
   const [showResult, setShowResult] = useState(false);
-  const factories = useMemo(() => makeSessionFactories(props.gameType), [props.gameType]);
+  const [showFullHistory, setShowFullHistory] = useState(false);
+  const factories = useMemo(() => makeSessionFactories(cfg.gameType), [cfg.gameType]);
+
   const { state, actions, capabilities, sessionRef } = useGameSession({
     gameKey,
-    gameType: props.gameType,
-    humanSide: props.humanSide,
-    difficulty: props.difficulty,
-    factories,
+    gameType: cfg.gameType,
+    mode: cfg.mode,
+    humanSide: cfg.humanSide,
+    difficulty: cfg.difficulty,
+    difficultySecond: cfg.difficultySecond,
+    stepMode: cfg.stepMode,
+    factories: cfg.mode === 'pvp' ? undefined : factories,
   });
 
   const handleExit = useCallback(() => {
     void shutdownEngines().then(props.onExit);
   }, [props.onExit]);
 
-  // Ensure engines are cleaned up when the screen unmounts for any reason
-  // (not only via the Back button).
   useEffect(() => {
     return () => {
       void shutdownEngines();
     };
   }, []);
 
-  // ---- board sizing (RN used useWindowDimensions) --------------------------
+  // Orientation: for pve use humanSide, for pvp/eve use 'w' (red/white at bottom) but allow flip via settings? Keep simple.
+  const orientation: Side = cfg.mode === 'pve' ? cfg.humanSide : 'w';
+
+  // ---- board sizing
   const areaRef = useRef<HTMLDivElement>(null);
   const [areaSize, setAreaSize] = useState({ w: 0, h: 0 });
   useEffect(() => {
@@ -72,7 +71,7 @@ export function GameScreen(props: {
       ? Math.max(160, Math.floor(Math.min(areaSize.w - 8, areaSize.h - 8, 720)))
       : 0;
 
-  // ---- tap-to-move ---------------------------------------------------------
+  // ---- tap-to-move
   const [selected, setSelected] = useState<Square | null>(null);
   const [hint, setHint] = useState<{ from: Square; to: Square } | null>(null);
   const targets = useMemo<ReadonlySet<Square>>(() => {
@@ -82,7 +81,6 @@ export function GameScreen(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, state.history.length, state.result, state.turn]);
 
-  /** Pick the move for a tapped destination; prefer queen promotion. */
   const moveForTarget = useCallback(
     (from: Square, to: Square) => {
       const session = sessionRef.current;
@@ -97,8 +95,27 @@ export function GameScreen(props: {
     (sq: Square) => {
       const session = sessionRef.current;
       if (!session || state.result) return;
-      if (state.turn !== props.humanSide && capabilities.engineOpponent) return; // engine thinking
-      setHint(null);
+
+      // Item 7: engine vs engine step mode - no human moves
+      if (capabilities.isEngineVsEngine) return;
+
+      // Item 4: hint click to move - if hint exists and user taps hint destination, play it
+      if (hint && sq === hint.to) {
+        const mv = moveForTarget(hint.from, hint.to);
+        if (mv) {
+          setHint(null);
+          setSelected(null);
+          session.playHumanMove(mv.uci);
+          return;
+        }
+      }
+
+      // In pvp, both sides are human; in pve, only humanSide can move when it's their turn
+      const isHumanTurn = cfg.mode === 'pvp' ? true : state.turn === cfg.humanSide;
+      if (!isHumanTurn && capabilities.engineOpponent) return; // engine thinking, block
+      // For pvp, we don't block on turn check beyond human turn - already handled
+      // Clear hint on any interaction (but preserve for hint-move case above)
+      if (hint) setHint(null);
 
       if (selected && targets.has(sq)) {
         const mv = moveForTarget(selected, sq);
@@ -107,25 +124,37 @@ export function GameScreen(props: {
         return;
       }
       if (selected === sq) {
-        setSelected(null); // tap same square to deselect
+        setSelected(null);
         return;
       }
       const p: Piece | undefined = state.pieces[sq];
-      if (p && p.side === props.humanSide) {
-        setSelected(session.rules.moves({ square: sq }).length > 0 ? sq : null);
-      } else if (!capabilities.engineOpponent) {
-        // Local mode: either side may be picked up.
-        setSelected(session.rules.moves({ square: sq }).length > 0 ? sq : null);
+      // Determine if this piece belongs to player who can move now
+      const sideToMove = state.turn;
+      const canPickThisSide = cfg.mode === 'pvp' ? p?.side === sideToMove : p?.side === cfg.humanSide && sideToMove === cfg.humanSide;
+      // For pvp, allow picking side to move; for pve, only humanSide
+      if (cfg.mode === 'pvp') {
+        if (p && p.side === sideToMove) {
+          setSelected(session.rules.moves({ square: sq }).length > 0 ? sq : null);
+        } else {
+          setSelected(null);
+        }
       } else {
-        setSelected(null);
+        if (p && p.side === cfg.humanSide && sideToMove === cfg.humanSide) {
+          setSelected(session.rules.moves({ square: sq }).length > 0 ? sq : null);
+        } else if (!capabilities.engineOpponent) {
+          // fallback for local mode without engine (should not happen)
+          setSelected(session.rules.moves({ square: sq }).length > 0 ? sq : null);
+        } else {
+          setSelected(null);
+        }
       }
     },
-    [selected, targets, state.turn, state.result, state.pieces, props.humanSide, capabilities.engineOpponent, moveForTarget],
+    [selected, targets, state.turn, state.result, state.pieces, cfg, capabilities, moveForTarget, hint],
   );
 
   const onHint = useCallback(async () => {
     const mv = await actions.hint();
-    if (mv) setHint({ from: mv.from, to: mv.to });
+    if (mv) setHint({ from: mv.from as Square, to: mv.to as Square });
   }, [actions]);
 
   const onUndo = useCallback(() => {
@@ -134,66 +163,106 @@ export function GameScreen(props: {
     actions.undo();
   }, [actions]);
 
-  const controls: ControlDef[] = [
-    { label: '悔棋', onPress: onUndo, disabled: state.history.length === 0 || !!state.result },
-    {
-      label: actions.assistOn ? '辅助·开' : '辅助·关',
-      active: actions.assistOn,
-      disabled: !capabilities.assist,
-      onPress: () =>
-        actions.assistOn || !capabilities.assist
-          ? undefined
-          : void actions.enableAssist(),
-    },
-    {
-      label: '提示',
-      onPress: () => void onHint(),
-      disabled: !!state.result || !capabilities.hints,
-    },
-    { label: '认输', tone: 'danger', onPress: () => actions.resign(), disabled: !!state.result },
-  ];
+  const onStep = useCallback(() => {
+    actions.step();
+  }, [actions]);
+
+  // Controls: adapt for mode
+  const controls: ControlDef[] = useMemo(() => {
+    if (capabilities.isEngineVsEngine) {
+      if (capabilities.isStepMode) {
+        return [
+          { label: '下一步', onPress: onStep, disabled: !!state.result || !!state.thinkingSide },
+          { label: '悔棋', onPress: onUndo, disabled: state.history.length === 0 || !!state.result },
+          { label: '认输', tone: 'danger', onPress: () => actions.resign(), disabled: !!state.result },
+        ];
+      }
+      // auto eve
+      return [
+        { label: '暂停', onPress: () => {}, disabled: true },
+        { label: '悔棋', onPress: onUndo, disabled: state.history.length === 0 || !!state.result },
+        { label: '认输', tone: 'danger', onPress: () => actions.resign(), disabled: !!state.result },
+      ];
+    }
+    // pve / pvp
+    return [
+      { label: '悔棋', onPress: onUndo, disabled: state.history.length === 0 || !!state.result },
+      {
+        label: actions.assistOn ? '辅助·开' : '辅助·关',
+        active: actions.assistOn,
+        disabled: !capabilities.assist || cfg.mode === 'pvp',
+        onPress: () => (actions.assistOn || !capabilities.assist ? undefined : void actions.enableAssist()),
+      },
+      { label: '提示', onPress: () => void onHint(), disabled: !!state.result || !capabilities.hints },
+      { label: '认输', tone: 'danger', onPress: () => actions.resign(), disabled: !!state.result },
+    ];
+  }, [capabilities, actions, onUndo, onHint, onStep, state.history.length, state.result, state.thinkingSide, cfg.mode]);
 
   const lastEntry = state.history[state.history.length - 1] ?? null;
   const lastFrom = (lastEntry ? lastEntry.uci.slice(0, 2) : null) as Square | null;
   const lastTo = (lastEntry ? lastEntry.uci.slice(2, 4) : null) as Square | null;
 
+  const winnerSide = state.result?.winner ?? null;
   const resultHeadline =
     state.result === null
       ? ''
-      : state.result.winner === null
+      : winnerSide === null
         ? '和棋'
-        : state.result.winner === props.humanSide
-          ? '胜利'
-          : '失败';
+        : cfg.mode === 'eve'
+          ? winnerSide === 'w'
+            ? '红/白 胜'
+            : '黑 胜'
+          : winnerSide === cfg.humanSide
+            ? '胜利'
+            : '失败';
+
+  // Subtitle logic per mode
+  const subtitle = (() => {
+    if (cfg.mode === 'pvp') return '双人对局';
+    if (cfg.mode === 'eve') {
+      const d1 = DIFF_LABEL[cfg.difficulty];
+      const d2 = DIFF_LABEL[cfg.difficultySecond ?? cfg.difficulty];
+      return `观战 ${d1} vs ${d2} ${cfg.stepMode ? '· 步进' : '· 自动'}`;
+    }
+    return `${DIFF_LABEL[cfg.difficulty]} · ${cfg.gameType === 'chess' ? 'STOCKFISH 18' : 'PIKAFISH'}`;
+  })();
+
+  const humanSideLabel = (() => {
+    if (cfg.mode === 'pvp') return '双人';
+    if (cfg.mode === 'eve') return '观战';
+    return cfg.gameType === 'chess' ? (cfg.humanSide === 'w' ? '执白' : '执黑') : cfg.humanSide === 'w' ? '执红' : '执黑';
+  })();
+
+  // Move history rendering policy - item 3
+  const showMoveStrip = (() => {
+    if (settings.moveHistoryMode === 'always') return true;
+    if (settings.moveHistoryMode === 'compact') return true; // but compact will limit inside component
+    // hiddenDuringPlay: hide during play, show after result
+    return !!state.result;
+  })();
+
+  const moveStripHistory = useMemo(() => {
+    if (settings.moveHistoryMode === 'compact' && !state.result) {
+      // show last 5 moves only during play
+      return state.history.slice(-10); // 5 pairs
+    }
+    return state.history;
+  }, [state.history, settings.moveHistoryMode, state.result]);
 
   return (
-    <div className={themeClassFor(props.gameType)} style={{ height: '100%', backgroundColor: theme.bg, display: 'flex', flexDirection: 'column' }}>
+    <div className={themeClassFor(cfg.gameType)} style={{ height: '100%', backgroundColor: theme.bg, display: 'flex', flexDirection: 'column' }}>
       <TopBar
         theme={theme}
         title={theme.displayName}
-        subtitle={
-          capabilities.engineOpponent
-            ? `${DIFF_LABEL[props.difficulty]} · ${props.gameType === 'chess' ? 'STOCKFISH 18' : 'PIKAFISH'}`
-            : `本地双人对局 · ${DIFF_LABEL[props.difficulty]}`
-        }
+        subtitle={subtitle}
         onBack={handleExit}
-        right={
-          <span style={{ color: theme.textSecondary, fontSize: 10, paddingRight: 8 }}>
-            {props.gameType === 'chess'
-              ? props.humanSide === 'w'
-                ? '执白'
-                : '执黑'
-              : props.humanSide === 'w'
-                ? '执红'
-                : '执黑'}
-          </span>
-        }
+        right={<span style={{ color: theme.textSecondary, fontSize: 10, paddingRight: 8 }}>{humanSideLabel}</span>}
       />
 
       <StatusBanner
         theme={theme}
         turn={state.turn}
-        humanSide={capabilities.engineOpponent ? props.humanSide : state.turn}
+        humanSide={cfg.mode === 'pvp' ? state.turn : cfg.mode === 'eve' ? state.turn : cfg.humanSide}
         thinkingSide={state.thinkingSide}
         check={state.check}
         bootError={state.bootError}
@@ -211,58 +280,83 @@ export function GameScreen(props: {
         }}
       >
         {boardSize > 0 &&
-          (props.gameType === 'chess' ? (
+          (cfg.gameType === 'chess' ? (
             <ChessBoardView
               size={boardSize}
-              orientation={props.humanSide}
+              orientation={orientation}
               pieces={state.pieces}
               theme={theme}
-              {...{
-                selected,
-                targets,
-                hint,
-                lastFrom,
-                lastTo,
-              }}
+              selected={selected}
+              targets={settings.showLegalTargets ? targets : new Set()}
+              hint={hint}
+              lastFrom={lastFrom}
+              lastTo={lastTo}
+              flipOpponentPieces={settings.flipOpponentPieces}
+              polished={settings.chessBoardStyle === 'polished'}
               onPressPoint={p => onPressPoint(`${p.file}${p.rank}`)}
             />
           ) : (
             <XiangqiBoardView
               size={boardSize}
-              orientation={props.humanSide}
+              orientation={orientation}
               pieces={state.pieces}
               theme={theme}
               selected={selected}
-              targets={targets}
+              targets={settings.showLegalTargets ? targets : new Set()}
               lastFrom={lastFrom}
               lastTo={lastTo}
               hint={hint}
+              flipOpponentPieces={settings.flipOpponentPieces}
+              xiangqiFont={settings.xiangqiFont}
+              xiangqiTexture={settings.xiangqiTexture}
               onPressPoint={p => onPressPoint(`${p.file}${p.rank}`)}
             />
           ))}
       </div>
 
-      {actions.assistOn && capabilities.assist ? (
-        <AssistPanel theme={theme} lines={state.assistLines} historyLast={lastEntry} />
-      ) : null}
+      {actions.assistOn && capabilities.assist ? <AssistPanel theme={theme} lines={state.assistLines} historyLast={lastEntry} /> : null}
 
       <ControlsBar theme={theme} controls={controls} />
-      <MoveListStrip theme={theme} history={state.history} />
+
+      {showMoveStrip ? (
+        <MoveListStrip theme={theme} history={moveStripHistory} />
+      ) : (
+        <div style={{ height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: theme.surfaceAlt }}>
+          <button type="button" onClick={() => setShowFullHistory(true)} style={{ color: theme.textSecondary, fontSize: 11, padding: '6px 12px' }}>
+            着法 {state.history.length} 步 · 对局结束后可查看完整记录
+          </button>
+        </div>
+      )}
+
+      {/* Full history sheet when hiddenDuringPlay and user requests */}
+      {showFullHistory ? (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,15,8,0.45)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 50 }} onClick={() => setShowFullHistory(false)}>
+          <div style={{ width: '100%', maxWidth: 480, maxHeight: '60%', background: theme.surface, borderTopLeftRadius: 12, borderTopRightRadius: 12, padding: 'var(--sp-l)', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--sp-m)' }}>
+              <span style={{ fontWeight: 700, color: theme.textPrimary }}>着法记录</span>
+              <button type="button" onClick={() => setShowFullHistory(false)} style={{ color: theme.accent, fontSize: 12 }}>关闭</button>
+            </div>
+            <MoveListStrip theme={theme} history={state.history} />
+            <div style={{ height: 12 }} />
+          </div>
+        </div>
+      ) : null}
 
       <ResultOverlay
         visible={!!state.result && showResult}
         theme={theme}
         headline={resultHeadline}
         detail=""
+        history={state.history}
         onNewGame={() => {
           setShowResult(false);
           setSelected(null);
           setHint(null);
+          setShowFullHistory(false);
           setGameKey(k => k + 1);
         }}
         onClose={() => setShowResult(false)}
       />
-      {/* Auto-show the overlay once a result arrives. */}
       <ResultAutoShow resultArrived={!!state.result} onShow={() => setShowResult(true)} />
     </div>
   );

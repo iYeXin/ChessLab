@@ -25,11 +25,13 @@ interface Props extends BoardLayerProps {
   orientation: 'w' | 'b';
   pieces: Record<Square, Piece>;
   theme: GameTheme;
+  flipOpponentPieces?: boolean;
+  polished?: boolean;
   onPressPoint(p: BoardPoint): void;
 }
 
 export function ChessBoardView(props: Props) {
-  const { size, orientation, pieces, theme, onPressPoint } = props;
+  const { size, orientation, pieces, theme, onPressPoint, flipOpponentPieces, polished } = props;
   const points = useMemo(() => boardPoints('chess', orientation), [orientation]);
   const cell = Math.floor(size / 8);
 
@@ -39,17 +41,28 @@ export function ChessBoardView(props: Props) {
       : ['h', 'g', 'f', 'e', 'd', 'c', 'b', 'a'];
   const ranks = orientation === 'w' ? [8, 7, 6, 5, 4, 3, 2, 1] : [1, 2, 3, 4, 5, 6, 7, 8];
 
-  return (
-    <div
-      className="chess-board"
-      style={{
+  // Item 8: polished style adds gradient, inner shadow, rounded corners
+  const frameStyle: React.CSSProperties = polished
+    ? {
+        width: cell * 8 + 26,
+        height: cell * 8 + 26,
+        background: `linear-gradient(145deg, ${theme.board.frame} 0%, #3e2e20 100%)`,
+        border: `2px solid ${theme.board.frameBorder}`,
+        borderRadius: 6,
+        boxShadow: '0 4px 12px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.15)',
+        display: 'flex',
+        overflow: 'hidden',
+      }
+    : {
         width: cell * 8 + 26,
         height: cell * 8 + 26,
         backgroundColor: theme.board.frame,
         border: `2px solid ${theme.board.frameBorder}`,
         display: 'flex',
-      }}
-    >
+      };
+
+  return (
+    <div className={`chess-board ${polished ? 'polished' : ''}`} style={frameStyle}>
       {/* rank labels */}
       <div style={{ width: 13 }}>
         {ranks.map(r => (
@@ -91,7 +104,11 @@ export function ChessBoardView(props: Props) {
                           fontSize: cell * 0.72,
                           fontWeight: 700,
                           lineHeight: 1,
-                          textShadow: `0 1px 2px ${theme.pieces[piece.side].shadow}`,
+                          textShadow: polished
+                            ? `0 1px 3px ${theme.pieces[piece.side].shadow}, 0 0 1px rgba(0,0,0,0.3)`
+                            : `0 1px 2px ${theme.pieces[piece.side].shadow}`,
+                          transform: flipOpponentPieces && piece.side !== orientation ? 'rotate(180deg)' : undefined,
+                          display: 'inline-block',
                         }}
                       >
                         {CHESS_GLYPHS[piece.type] ?? '?'}

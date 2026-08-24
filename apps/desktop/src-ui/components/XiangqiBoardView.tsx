@@ -20,13 +20,16 @@ interface Props {
   lastFrom: string | null;
   lastTo: string | null;
   hint: { from: string; to: string } | null;
+  flipOpponentPieces?: boolean;
+  xiangqiFont?: 'default' | 'lishu';
+  xiangqiTexture?: 'flat' | 'realistic';
   onPressPoint(p: BoardPoint): void;
 }
 
 const LINE_W = 1;
 
 export function XiangqiBoardView(props: Props) {
-  const { size, orientation, pieces, theme, onPressPoint } = props;
+  const { size, orientation, pieces, theme, onPressPoint, flipOpponentPieces, xiangqiFont, xiangqiTexture } = props;
   const points = useMemo(() => boardPoints('xiangqi', orientation), [orientation]);
 
   const pad = Math.max(14, Math.floor(size * 0.06));
@@ -48,15 +51,22 @@ export function XiangqiBoardView(props: Props) {
   const faceColor = theme.board.lightSquare;
   const line = theme.board.line;
 
+  const isRealistic = xiangqiTexture === 'realistic';
+  const boardBg = isRealistic
+    ? `linear-gradient(180deg, #f3e2b8 0%, #e7cd97 30%, #dcc48a 100%)`
+    : faceColor;
+
   return (
     <div
+      className={`xq-board ${isRealistic ? 'realistic' : 'flat'} ${xiangqiFont === 'lishu' ? 'font-lishu' : ''}`}
       style={{
         position: 'relative',
         width: size,
         height: size,
-        backgroundColor: faceColor,
+        background: boardBg,
         border: `1px solid ${theme.board.frameBorder}`,
         overflow: 'visible',
+        boxShadow: isRealistic ? 'inset 0 0 12px rgba(139,108,62,0.25), 0 2px 8px rgba(0,0,0,0.15)' : undefined,
       }}
     >
       {/* horizontal lines (10) */}
@@ -223,7 +233,16 @@ export function XiangqiBoardView(props: Props) {
                 }}
               />
             )}
-            {piece && <Disc diameter={disc} piece={piece} theme={theme} />}
+            {piece && (
+              <Disc
+                diameter={disc}
+                piece={piece}
+                theme={theme}
+                flip={!!flipOpponentPieces && piece.side !== orientation}
+                font={xiangqiFont}
+                realistic={isRealistic}
+              />
+            )}
           </button>
         );
       })}
@@ -279,28 +298,40 @@ function Disc({
   diameter,
   piece,
   theme,
+  flip,
+  font,
+  realistic,
 }: {
   diameter: number;
   piece: Piece;
   theme: GameTheme;
+  flip?: boolean;
+  font?: 'default' | 'lishu';
+  realistic?: boolean;
 }) {
   const style = theme.pieces[piece.side];
   const char = XIANGQI_CHARS[piece.side][piece.type] ?? '?';
+  const fontFamily = font === 'lishu' ? '"Ma Shan Zheng", "LiSu", "STKaiti", "KaiTi", cursive' : '"Noto Serif SC", "SimSun", serif';
   return (
     <div
       style={{
         width: diameter,
         height: diameter,
         borderRadius: diameter / 2,
-        backgroundColor: style.fg,
+        background: realistic
+          ? piece.side === 'w'
+            ? 'radial-gradient(circle at 30% 30%, #fff8e8 0%, #f6e7c8 60%, #e8d0a0 100%)'
+            : 'radial-gradient(circle at 30% 30%, #faf6e8 0%, #f1e8d2 60%, #d8cbb0 100%)'
+          : style.fg,
         borderWidth: Math.max(1.5, diameter * 0.05),
         borderStyle: 'solid',
         borderColor: style.border,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        boxShadow: `0 1px 1.5px ${style.shadow}`,
+        boxShadow: realistic ? `0 2px 4px ${style.shadow}, inset 0 1px 0 rgba(255,255,255,0.6)` : `0 1px 1.5px ${style.shadow}`,
         pointerEvents: 'none',
+        transform: flip ? 'rotate(180deg)' : undefined,
       }}
     >
       <span
@@ -309,6 +340,9 @@ function Disc({
           fontSize: diameter * 0.56,
           fontWeight: 700,
           lineHeight: `${diameter * 0.62}px`,
+          fontFamily,
+          transform: flip ? 'rotate(180deg)' : undefined,
+          display: 'inline-block',
         }}
       >
         {char}

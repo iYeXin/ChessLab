@@ -48,6 +48,8 @@ export interface SessionOptions {
    * from the game opponent — see packages/game-session/src/analysis.ts).
    */
   analysisFactory?: AssistEngineFactory;
+  /** When false, engine moves require explicit step() (for 观战步进 mode). */
+  autoPlay?: boolean;
 }
 
 /**
@@ -81,6 +83,19 @@ export class GameSession {
 
   // ---- lifecycle -----------------------------------------------------------
 
+  get autoPlay(): boolean {
+    return this.opts.autoPlay ?? true;
+  }
+
+  /** Manual step for 观战步进 mode: trigger one engine ply if it's engine's turn. */
+  step(): boolean {
+    if (this.disposed || this.over) return false;
+    const cfg = this.currentPlayerConfig();
+    if (!cfg || cfg.kind !== 'engine' || this.engineThinking) return false;
+    void this.pumpEngineTurn();
+    return true;
+  }
+
   async start(): Promise<void> {
     if (this.started) throw new Error('session already started');
     this.started = true;
@@ -102,7 +117,7 @@ export class GameSession {
     }
 
     this.emit({ kind: 'turn', side: 'w' });
-    void this.pumpEngineTurn();
+    if (this.autoPlay) void this.pumpEngineTurn();
   }
 
   async dispose(): Promise<void> {
@@ -172,7 +187,7 @@ export class GameSession {
     // the engine's opening move), let the engine think again instead of
     // stalling the session.
     const afterUndo = this.currentPlayerConfig();
-    if (afterUndo?.kind === 'engine' && !this.over && this.started) {
+    if (this.autoPlay && afterUndo?.kind === 'engine' && !this.over && this.started) {
       void this.pumpEngineTurn();
     }
     return removed > 0;
@@ -288,9 +303,9 @@ export class GameSession {
     ) {
       this.assist.begin(this.rules.fen(), this.assistOpts);
     }
-    // A cancelled opponent search must be re-issued or the game stalls.
+    // A cancelled opponent search must be re-issued or the game stalls (autoPlay only).
     const cfg = this.currentPlayerConfig();
-    if (!this.over && cfg?.kind === 'engine') {
+    if (this.autoPlay && !this.over && cfg?.kind === 'engine') {
       void this.pumpEngineTurn();
     }
   }
@@ -368,7 +383,7 @@ export class GameSession {
     }
 
     this.emit({ kind: 'turn', side: this.rules.turn() });
-    void this.pumpEngineTurn();
+    if (this.autoPlay) void this.pumpEngineTurn();
     return true;
   }
 

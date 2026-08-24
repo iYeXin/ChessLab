@@ -313,11 +313,19 @@ export function ResultOverlay(props: {
   theme: GameTheme;
   headline: string;
   detail: string;
+  history?: readonly HistoryEntry[];
   onNewGame(): void;
   onClose(): void;
 }) {
   const { theme } = props;
+  const [showHistory, setShowHistory] = React.useState(false);
+  React.useEffect(() => {
+    if (!props.visible) setShowHistory(false);
+  }, [props.visible]);
   if (!props.visible) return null;
+
+  const hasHistory = !!props.history && props.history.length > 0;
+
   return (
     <div
       className="result-overlay"
@@ -337,7 +345,7 @@ export function ResultOverlay(props: {
         className="result-card"
         style={{
           width: '100%',
-          maxWidth: 320,
+          maxWidth: 340,
           borderRadius: 14,
           display: 'flex',
           flexDirection: 'column',
@@ -345,42 +353,33 @@ export function ResultOverlay(props: {
           padding: 'var(--sp-xl)',
           backgroundColor: theme.surface,
           boxShadow: '0 12px 40px rgba(20,15,8,0.35)',
+          maxHeight: '80vh',
+          overflowY: 'auto',
         }}
         onClick={e => e.stopPropagation()}
       >
-        <span style={{ fontSize: 22, fontWeight: 800, color: theme.textPrimary }}>
-          {props.headline}
-        </span>
-        <span
-          style={{
-            color: theme.textSecondary,
-            marginTop: 4,
-            marginBottom: 'var(--sp-l)',
-            fontSize: 13,
-          }}
-        >
-          {props.detail}
-        </span>
+        <span style={{ fontSize: 22, fontWeight: 800, color: theme.textPrimary }}>{props.headline}</span>
+        <span style={{ color: theme.textSecondary, marginTop: 4, marginBottom: 'var(--sp-m)', fontSize: 13 }}>{props.detail}</span>
+
+        {hasHistory && !showHistory ? (
+          <button type="button" onClick={() => setShowHistory(true)} style={{ marginBottom: 'var(--sp-m)', padding: '6px 12px', borderRadius: 8, border: `1px solid ${theme.surfaceAlt}`, background: theme.surfaceAlt, color: theme.textPrimary, fontSize: 12 }}>
+            查看着法（{props.history!.length}步）
+          </button>
+        ) : null}
+        {showHistory && hasHistory ? (
+          <div style={{ width: '100%', marginBottom: 'var(--sp-m)', maxHeight: 160, overflowY: 'auto', border: `1px solid ${theme.surfaceAlt}`, borderRadius: 8, padding: 'var(--sp-s)' }}>
+            <MoveListStrip theme={theme} history={props.history!} />
+          </div>
+        ) : null}
+
         <button
           type="button"
           onClick={props.onNewGame}
-          style={{
-            width: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '10px 0',
-            borderRadius: 10,
-            backgroundColor: theme.accent,
-          }}
+          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px 0', borderRadius: 10, backgroundColor: theme.accent }}
         >
           <span style={{ color: '#FFF8EE', fontWeight: 700 }}>再来一局</span>
         </button>
-        <button
-          type="button"
-          onClick={props.onClose}
-          style={{ marginTop: 'var(--sp-m)', padding: '4px 8px' }}
-        >
+        <button type="button" onClick={props.onClose} style={{ marginTop: 'var(--sp-m)', padding: '4px 8px' }}>
           <span style={{ color: theme.textSecondary, fontSize: 12 }}>回看棋盘</span>
         </button>
       </div>
