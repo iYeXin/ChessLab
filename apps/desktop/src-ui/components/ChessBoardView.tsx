@@ -152,8 +152,10 @@ function SquareCell({
   onPress(): void;
   children?: React.ReactNode;
 }) {
+  const isLastFrom = layer.lastFrom === square;
+  const isLastTo = layer.lastTo === square;
   let overlay: string | null = null;
-  if (layer.lastFrom === square || layer.lastTo === square) overlay = polished ? 'rgba(232,185,108,0.42)' : 'rgba(230,180,90,0.45)';
+  if (isLastFrom) overlay = polished ? 'rgba(232,185,108,0.38)' : 'rgba(230,180,90,0.45)';
   if (layer.selected === square) overlay = polished ? 'rgba(130,175,95,0.52)' : 'rgba(120,170,90,0.55)';
   if (layer.hint && (layer.hint.from === square || layer.hint.to === square)) {
     overlay = polished ? 'rgba(82,138,190,0.48)' : 'rgba(70,130,190,0.50)';
@@ -162,7 +164,13 @@ function SquareCell({
 
   return (
     <PressableCell size={cell} color={baseColor} onPress={onPress} polished={polished}>
-      {overlay ? <div style={{ position: 'absolute', inset: 0, backgroundColor: overlay, border: polished ? '1px solid rgba(255,255,255,0.12)' : undefined }} /> : null}
+      {overlay && !isLastTo ? <div style={{ position: 'absolute', inset: 0, backgroundColor: overlay, border: polished ? '1px solid rgba(255,255,255,0.12)' : undefined }} /> : null}
+      {isLastTo ? (
+        <>
+          <div style={{ position: 'absolute', inset: 0, backgroundColor: polished ? 'rgba(232,185,108,0.32)' : 'rgba(230,180,90,0.35)' }} />
+          <div style={{ position: 'absolute', inset: polished ? 3 : 2, borderRadius: 2, border: `2px solid ${polished ? 'rgba(82,138,190,0.9)' : 'rgba(58,110,165,0.85)'}`, pointerEvents: 'none' }} />
+        </>
+      ) : null}
       {isTarget ? (
         <div
           style={{

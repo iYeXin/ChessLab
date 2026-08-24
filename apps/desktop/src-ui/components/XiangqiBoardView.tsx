@@ -52,10 +52,8 @@ export function XiangqiBoardView(props: Props) {
   const line = theme.board.line;
 
   const isRealistic = xiangqiTexture === 'realistic';
-  // Refined realistic: very subtle wood, not rough gradient
-  const boardBg = isRealistic
-    ? `linear-gradient(180deg, #f7e8c0 0%, #eedad1 45%, #e8d5a8 100%)`
-    : faceColor;
+  // 棋盘不需要渐变：始终平板色，立体感交给棋子
+  const boardBg = faceColor;
 
   return (
     <div
@@ -67,7 +65,7 @@ export function XiangqiBoardView(props: Props) {
         background: boardBg,
         border: `1px solid ${theme.board.frameBorder}`,
         overflow: 'visible',
-        boxShadow: isRealistic ? 'inset 0 0 12px rgba(139,108,62,0.25), 0 2px 8px rgba(0,0,0,0.15)' : undefined,
+        boxShadow: undefined,
       }}
     >
       {/* horizontal lines (10) */}
@@ -191,8 +189,10 @@ export function XiangqiBoardView(props: Props) {
         const hit = Math.min(cellX, cellY);
         const isTarget = props.targets.has(sq);
         const isSelected = props.selected === sq;
-        const isLast = props.lastFrom === sq || props.lastTo === sq;
+        const isLastFrom = props.lastFrom === sq;
+        const isLastTo = props.lastTo === sq;
         const isHint = props.hint && (props.hint.from === sq || props.hint.to === sq);
+        const isLast = isLastFrom || isLastTo;
 
         return (
           <button
@@ -211,29 +211,58 @@ export function XiangqiBoardView(props: Props) {
               justifyContent: 'center',
             }}
           >
-            {/* markers under the disc */}
-            {(isTarget || isSelected || isLast || !!isHint) && (
+            {/* base highlight for selection / hint / target */}
+            {(isTarget || isSelected || !!isHint) && (
               <div
                 style={{
                   position: 'absolute',
                   width: disc * 1.02,
                   height: disc * 1.02,
                   borderRadius: disc,
-                  borderWidth: isHint || isSelected ? 2 : 0,
+                  borderWidth: 2,
                   borderStyle: 'solid',
-                  borderColor: isHint
-                    ? theme.highlight.hint
-                    : theme.highlight.selected,
-                  backgroundColor: isTarget
-                    ? theme.highlight.targetDot
-                    : isHint || isSelected
-                      ? theme.highlight.selected
-                      : isLast
-                        ? theme.highlight.lastMoveTo
-                        : 'transparent',
+                  borderColor: isHint ? theme.highlight.hint : theme.highlight.selected,
+                  backgroundColor: isTarget ? theme.highlight.targetDot : theme.highlight.selected,
                 }}
               />
             )}
+            {/* last move: start (lighter) and target (stronger ring + dot) */}
+            {isLastFrom && !isSelected && !isHint ? (
+              <div
+                style={{
+                  position: 'absolute',
+                  width: disc * 1.02,
+                  height: disc * 1.02,
+                  borderRadius: disc,
+                  backgroundColor: theme.highlight.lastMoveFrom,
+                }}
+              />
+            ) : null}
+            {isLastTo && !isSelected && !isHint ? (
+              <>
+                <div
+                  style={{
+                    position: 'absolute',
+                    width: disc * 1.08,
+                    height: disc * 1.08,
+                    borderRadius: disc,
+                    border: `2.5px solid ${theme.highlight.hint}`,
+                    backgroundColor: theme.highlight.lastMoveTo,
+                  }}
+                />
+                <div
+                  style={{
+                    position: 'absolute',
+                    width: disc * 0.22,
+                    height: disc * 0.22,
+                    borderRadius: disc,
+                    backgroundColor: theme.highlight.hint,
+                    border: '1px solid white',
+                    boxShadow: '0 0 0 1px rgba(0,0,0,0.15)',
+                  }}
+                />
+              </>
+            ) : null}
             {piece && (
               <Disc
                 diameter={disc}
@@ -312,42 +341,79 @@ function Disc({
 }) {
   const style = theme.pieces[piece.side];
   const char = XIANGQI_CHARS[piece.side][piece.type] ?? '?';
-  // 1. 黑体就是黑体：默认用无衬线黑体；隶书用内嵌隶书
   const fontFamily = font === 'lishu' ? '"ChessLishu", "LiSu", "STKaiti", "KaiTi", cursive' : '"Noto Sans SC", "Microsoft YaHei UI", "PingFang SC", "Heiti SC", sans-serif';
+  // 隶书时字形更大
+  const fontSize = font === 'lishu' ? diameter * 0.62 : diameter * 0.54;
+  if (!realistic) {
+    return (
+      <div
+        style={{
+          width: diameter,
+          height: diameter,
+          borderRadius: diameter / 2,
+          backgroundColor: style.fg,
+          borderWidth: Math.max(1.5, diameter * 0.05),
+          borderStyle: 'solid',
+          borderColor: style.border,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: `0 1px 1.5px ${style.shadow}`,
+          pointerEvents: 'none',
+          transform: flip ? 'rotate(180deg)' : undefined,
+        }}
+      >
+        <span style={{ color: piece.side === 'w' ? '#A63A2B' : '#2B2721', fontSize, fontWeight: 700, lineHeight: `${diameter * 0.62}px`, fontFamily, display: 'inline-block' }}>{char}</span>
+      </div>
+    );
+  }
+  // 立体结构：外圈厚度 + 顶面 + 高光，不是阴影堆砌
+  const edgeColor = piece.side === 'w' ? '#8a5a2a' : '#2a2a2a';
   return (
     <div
       style={{
         width: diameter,
         height: diameter,
         borderRadius: diameter / 2,
-        background: realistic
-          ? piece.side === 'w'
-            ? 'radial-gradient(circle at 30% 30%, #fff8e8 0%, #f6e7c8 60%, #e8d0a0 100%)'
-            : 'radial-gradient(circle at 30% 30%, #faf6e8 0%, #f1e8d2 60%, #d8cbb0 100%)'
-          : style.fg,
-        borderWidth: Math.max(1.5, diameter * 0.05),
+        position: 'relative',
+        backgroundColor: style.fg,
+        borderWidth: Math.max(1.2, diameter * 0.045),
         borderStyle: 'solid',
         borderColor: style.border,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        boxShadow: realistic ? `0 2px 4px ${style.shadow}, inset 0 1px 0 rgba(255,255,255,0.6)` : `0 1px 1.5px ${style.shadow}`,
+        // 结构性立体：内阴影作厚度，外阴影作投影，顶部高光用伪元素
+        boxShadow: `0 1.5px 3px ${style.shadow}, inset 0 1.5px 0 rgba(255,255,255,0.65), inset 0 -1.5px 0 rgba(0,0,0,0.12)`,
         pointerEvents: 'none',
         transform: flip ? 'rotate(180deg)' : undefined,
+        overflow: 'hidden',
       }}
     >
-      <span
+      {/* 顶部高光带 */}
+      <div
         style={{
-          color: piece.side === 'w' ? '#A63A2B' : '#2B2721',
-          fontSize: diameter * 0.56,
-          fontWeight: 700,
-          lineHeight: `${diameter * 0.62}px`,
-          fontFamily,
-          display: 'inline-block',
+          position: 'absolute',
+          top: 0,
+          left: '12%',
+          right: '12%',
+          height: '38%',
+          borderRadius: '50%',
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0) 70%)',
+          pointerEvents: 'none',
         }}
-      >
-        {char}
-      </span>
+      />
+      {/* 边缘厚度暗部 */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          borderRadius: diameter / 2,
+          boxShadow: `inset 0 -2px 3px rgba(0,0,0,0.18)`,
+          pointerEvents: 'none',
+        }}
+      />
+      <span style={{ color: piece.side === 'w' ? '#A63A2B' : '#2B2721', fontSize, fontWeight: 700, lineHeight: `${diameter * 0.62}px`, fontFamily, display: 'inline-block', zIndex: 1 }}>{char}</span>
     </div>
   );
 }
