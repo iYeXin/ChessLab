@@ -52,8 +52,9 @@ export function XiangqiBoardView(props: Props) {
   const line = theme.board.line;
 
   const isRealistic = xiangqiTexture === 'realistic';
+  // Refined realistic: very subtle wood, not rough gradient
   const boardBg = isRealistic
-    ? `linear-gradient(180deg, #f3e2b8 0%, #e7cd97 30%, #dcc48a 100%)`
+    ? `linear-gradient(180deg, #f7e8c0 0%, #eedad1 45%, #e8d5a8 100%)`
     : faceColor;
 
   return (

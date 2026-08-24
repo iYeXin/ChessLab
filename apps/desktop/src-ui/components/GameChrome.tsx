@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import type { GameResult, HistoryEntry, Side } from '@chesslab/rules-core';
 import type { AssistLine } from '@chesslab/game-session';
 import type { GameTheme } from '../theme/games';
+import { formatHistoryForDisplay } from '../game/format-history';
 
 /**
  * DOM port of apps/chessapp/src/components/common/GameChrome.tsx.
@@ -211,17 +212,11 @@ export function ControlsBar(props: { theme: GameTheme; controls: ControlDef[] })
 
 export function MoveListStrip(props: { theme: GameTheme; history: readonly HistoryEntry[]; gameType?: import('@chesslab/rules-core').GameType; xiangqiNotation?: 'iccs' | 'traditional' }) {
   const pairs: string[] = [];
-  // Use helper to get display strings if traditional
   let displayS = props.history.map(h => h.san);
   if (props.gameType === 'xiangqi' && props.xiangqiNotation === 'traditional') {
     try {
-      // Lazy require to avoid circular deps
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { formatHistoryForDisplay } = require('../game/format-history') as typeof import('../game/format-history');
       displayS = formatHistoryForDisplay(props.history, 'xiangqi', 'traditional');
-    } catch {
-      // fallback to san
-    }
+    } catch {}
   }
   for (let i = 0; i < props.history.length; i += 2) {
     const w = displayS[i] ?? '';
@@ -418,8 +413,6 @@ export function HistoryModal(props: { theme: GameTheme; history: readonly Histor
   let displayS = props.history.map(h => h.san);
   if (props.gameType === 'xiangqi' && props.xiangqiNotation === 'traditional') {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { formatHistoryForDisplay } = require('../game/format-history') as typeof import('../game/format-history');
       displayS = formatHistoryForDisplay(props.history, 'xiangqi', 'traditional');
     } catch {}
   }
