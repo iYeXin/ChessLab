@@ -26,6 +26,12 @@
   --radius-m: 10px;
   --radius-l: 14px;
 
+  /* Safe area for Android edge-to-edge / iOS notch */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
   font-family:
     'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC', 'Noto Sans SC', system-ui,
     -apple-system, sans-serif;
@@ -45,6 +51,16 @@ body,
 #root {
   height: 100%;
   overflow: hidden;
+}
+
+/* Safe area: avoid status bar / navigation bar on Android edge-to-edge */
+#root {
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+  box-sizing: border-box;
+  background-color: var(--bg, #F1EADC);
 }
 
 /* Hide scrollbars but keep scroll (especially Settings) */
