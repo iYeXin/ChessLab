@@ -164,16 +164,18 @@ export function XiangqiBoardView(props: Props) {
           pointerEvents: 'none',
         }}
       >
-        {(['楚 河', '漢 界'] as const).map(t => (
+        {(['楚河', '漢界'] as const).map(t => (
           <span
             key={t}
             style={{
               color: theme.board.riverText,
-              fontSize: Math.floor(cellY * 0.52),
+              fontSize: Math.floor(cellY * 0.58),
               fontWeight: 700,
-              letterSpacing: 6,
-              opacity: 0.75,
+              letterSpacing: 8,
+              opacity: 0.82,
+              fontFamily: xiangqiFont === 'lishu' ? '"ChessLishu", "LiSu", "STKaiti", cursive' : '"Noto Serif SC", "STZhongsong", "SimSun", serif',
               transform: orientation === 'w' ? undefined : 'scaleX(-1)',
+              textShadow: '0 1px 0 rgba(255,255,255,0.4)',
             }}
           >
             {t}
