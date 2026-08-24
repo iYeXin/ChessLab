@@ -99,8 +99,8 @@ export function SettingsScreen(props: { onBack(): void }) {
 
 function SettingSection(props: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ background: '#FBF7EE', borderRadius: 12, border: '1px solid #E9DFC8', overflow: 'hidden' }}>
-      <div style={{ padding: '10px 14px', borderBottom: '1px solid #E9DFC8', background: '#F7F3EA', fontSize: 11, fontWeight: 700, letterSpacing: 1, color: '#7A5230' }}>{props.title}</div>
+    <div style={{ background: '#FBF7EE', borderRadius: 12, border: '1px solid #E9DFC8', overflow: 'visible' }}>
+      <div style={{ padding: '10px 14px', borderBottom: '1px solid #E9DFC8', background: '#F7F3EA', fontSize: 11, fontWeight: 700, letterSpacing: 1, color: '#7A5230', borderTopLeftRadius: 12, borderTopRightRadius: 12 }}>{props.title}</div>
       <div style={{ display: 'flex', flexDirection: 'column' }}>{props.children}</div>
     </div>
   );
@@ -146,14 +146,14 @@ function ToggleRow(props: { label: string; desc?: string; value: boolean; onChan
 
 function SelectRow<T extends string | number>(props: { label: string; value: T; options: { value: T; label: string }[]; onChange(v: T): void }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', padding: '12px 14px', borderBottom: '1px solid #F1EADC', gap: 8 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', padding: '12px 14px', borderBottom: '1px solid #F1EADC', gap: 8, minWidth: 0 }}>
       <div style={{ fontSize: 13, fontWeight: 600, color: '#2A251D' }}>{props.label}</div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, minWidth: 0, width: '100%' }}>
         {props.options.map(o => {
           const active = o.value === props.value;
           return (
             <button
-              key={o.value}
+              key={String(o.value)}
               type="button"
               onClick={() => props.onChange(o.value)}
               style={{
@@ -166,6 +166,11 @@ function SelectRow<T extends string | number>(props: { label: string; value: T; 
                 color: active ? '#4C3418' : '#5C5343',
                 fontSize: 12,
                 fontWeight: active ? 700 : 400,
+                maxWidth: '100%',
+                wordBreak: 'break-word',
+                textAlign: 'center',
+                flex: '0 1 auto',
+                minWidth: 0,
               }}
             >
               {o.label}
