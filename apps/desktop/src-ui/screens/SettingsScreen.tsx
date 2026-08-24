@@ -1,7 +1,7 @@
 import React from 'react';
 import { themeClassFor, CHESS_THEME } from '../theme/games';
 import { TopBar } from '../components/GameChrome';
-import { useSettings, type XiangqiFont, type XiangqiTexture, type ChessBoardStyle, type MoveHistoryMode } from '../state/settings';
+import { useSettings, type XiangqiFont, type XiangqiTexture, type ChessBoardStyle, type MoveHistoryMode, type XiangqiNotation } from '../state/settings';
 
 export function SettingsScreen(props: { onBack(): void }) {
   const theme = CHESS_THEME; // settings screen uses neutral chess chrome
@@ -56,6 +56,30 @@ export function SettingsScreen(props: { onBack(): void }) {
               { value: 'realistic', label: '仿真（木纹/渐变/阴影）' },
             ]}
             onChange={v => update('xiangqiTexture', v)}
+          />
+          <SelectRow<XiangqiNotation>
+            label="记谱方式"
+            value={settings.xiangqiNotation}
+            options={[
+              { value: 'iccs', label: '坐标（h2e2）' },
+              { value: 'traditional', label: '传统（兵五进一）' },
+            ]}
+            onChange={v => update('xiangqiNotation', v)}
+          />
+        </SettingSection>
+
+        <SettingSection title="观战设置">
+          <SelectRow<number>
+            label="自动步进延迟"
+            value={settings.autoDelayMs}
+            options={[
+              { value: 0, label: '无延迟' },
+              { value: 500, label: '0.5秒' },
+              { value: 800, label: '0.8秒' },
+              { value: 1200, label: '1.2秒' },
+              { value: 2000, label: '2秒' },
+            ]}
+            onChange={v => update('autoDelayMs', v)}
           />
         </SettingSection>
 
@@ -120,7 +144,7 @@ function ToggleRow(props: { label: string; desc?: string; value: boolean; onChan
   );
 }
 
-function SelectRow<T extends string>(props: { label: string; value: T; options: { value: T; label: string }[]; onChange(v: T): void }) {
+function SelectRow<T extends string | number>(props: { label: string; value: T; options: { value: T; label: string }[]; onChange(v: T): void }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', padding: '12px 14px', borderBottom: '1px solid #F1EADC', gap: 8 }}>
       <div style={{ fontSize: 13, fontWeight: 600, color: '#2A251D' }}>{props.label}</div>

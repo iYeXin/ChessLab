@@ -209,11 +209,23 @@ export function ControlsBar(props: { theme: GameTheme; controls: ControlDef[] })
   );
 }
 
-export function MoveListStrip(props: { theme: GameTheme; history: readonly HistoryEntry[] }) {
+export function MoveListStrip(props: { theme: GameTheme; history: readonly HistoryEntry[]; gameType?: import('@chesslab/rules-core').GameType; xiangqiNotation?: 'iccs' | 'traditional' }) {
   const pairs: string[] = [];
+  // Use helper to get display strings if traditional
+  let displayS = props.history.map(h => h.san);
+  if (props.gameType === 'xiangqi' && props.xiangqiNotation === 'traditional') {
+    try {
+      // Lazy require to avoid circular deps
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { formatHistoryForDisplay } = require('../game/format-history') as typeof import('../game/format-history');
+      displayS = formatHistoryForDisplay(props.history, 'xiangqi', 'traditional');
+    } catch {
+      // fallback to san
+    }
+  }
   for (let i = 0; i < props.history.length; i += 2) {
-    const w = props.history[i]?.san ?? '';
-    const b = props.history[i + 1]?.san ?? '';
+    const w = displayS[i] ?? '';
+    const b = displayS[i + 1] ?? '';
     pairs.push(`${i / 2 + 1}. ${w}${b ? ` ${b}` : ''}`);
   }
   const ref = useRef<HTMLDivElement>(null);
@@ -325,6 +337,8 @@ export function ResultOverlay(props: {
   headline: string;
   detail: string;
   history?: readonly HistoryEntry[];
+  gameType?: import('@chesslab/rules-core').GameType;
+  xiangqiNotation?: 'iccs' | 'traditional';
   onNewGame(): void;
   onClose(): void;
 }) {
@@ -393,17 +407,25 @@ export function ResultOverlay(props: {
           </button>
         </div>
       </div>
-      {showHistory && hasHistory ? <HistoryModal theme={theme} history={props.history!} onClose={() => setShowHistory(false)} /> : null}
+      {showHistory && hasHistory ? <HistoryModal theme={theme} history={props.history!} gameType={props.gameType} xiangqiNotation={props.xiangqiNotation} onClose={() => setShowHistory(false)} /> : null}
     </>
   );
 }
 
-export function HistoryModal(props: { theme: GameTheme; history: readonly HistoryEntry[]; onClose(): void }) {
+export function HistoryModal(props: { theme: GameTheme; history: readonly HistoryEntry[]; onClose(): void; gameType?: import('@chesslab/rules-core').GameType; xiangqiNotation?: 'iccs' | 'traditional' }) {
   const { theme } = props;
   const pairs: string[] = [];
+  let displayS = props.history.map(h => h.san);
+  if (props.gameType === 'xiangqi' && props.xiangqiNotation === 'traditional') {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { formatHistoryForDisplay } = require('../game/format-history') as typeof import('../game/format-history');
+      displayS = formatHistoryForDisplay(props.history, 'xiangqi', 'traditional');
+    } catch {}
+  }
   for (let i = 0; i < props.history.length; i += 2) {
-    const w = props.history[i]?.san ?? '';
-    const b = props.history[i + 1]?.san ?? '';
+    const w = displayS[i] ?? '';
+    const b = displayS[i + 1] ?? '';
     pairs.push(`${i / 2 + 1}. ${w}${b ? ` ${b}` : ''}`);
   }
   return (

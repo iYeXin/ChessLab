@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import type { GameType, Side } from '@chesslab/rules-core';
-import { themeFor, themeClassFor, CHESS_THEME, XIANGQI_THEME } from '../theme/games';
+import { themeFor, themeClassFor } from '../theme/games';
 import { TopBar } from '../components/GameChrome';
 import type { StartConfig, GameMode } from './HomeScreen';
+import { useSettings } from '../state/settings';
 
 const DIFF_LABELS = ['入门', '业余', '进阶', '大师', '特级'] as const;
 
@@ -12,11 +13,13 @@ export function GameSetupScreen(props: {
   onStart(cfg: StartConfig): void;
 }) {
   const theme = themeFor(props.gameType);
+  const { settings } = useSettings();
   const [side, setSide] = useState<Side>('w');
   const [difficulty, setDifficulty] = useState<1 | 2 | 3 | 4 | 5>(2);
   const [mode, setMode] = useState<GameMode>('pve');
   const [difficultySecond, setDifficultySecond] = useState<1 | 2 | 3 | 4 | 5>(3);
   const [stepMode, setStepMode] = useState(false);
+  const [autoDelayMs, setAutoDelayMs] = useState<number>(settings.autoDelayMs);
 
   const isChess = props.gameType === 'chess';
   const title = isChess ? '国际象棋' : '中国象棋';
@@ -30,6 +33,7 @@ export function GameSetupScreen(props: {
       difficulty,
       difficultySecond: mode === 'eve' ? difficultySecond : undefined,
       stepMode: mode === 'eve' ? stepMode : undefined,
+      autoDelayMs: mode === 'eve' && !stepMode ? autoDelayMs : undefined,
     });
   };
 
@@ -84,6 +88,15 @@ export function GameSetupScreen(props: {
                   <Seg label="手动步进" desc="每步需点下一步" active={stepMode} onPress={() => setStepMode(true)} />
                 </div>
               </Section>
+              {!stepMode ? (
+                <Section label="自动延迟">
+                  <div style={{ display: 'flex', gap: 'var(--sp-s)', flexWrap: 'wrap' }}>
+                    {[0, 500, 800, 1200, 2000].map(v => (
+                      <Seg key={v} label={v === 0 ? '无' : `${v / 1000}秒`} active={autoDelayMs === v} onPress={() => setAutoDelayMs(v as any)} />
+                    ))}
+                  </div>
+                </Section>
+              ) : null}
             </>
           ) : null}
 

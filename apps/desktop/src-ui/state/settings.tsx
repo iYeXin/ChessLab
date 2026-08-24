@@ -4,6 +4,7 @@ export type XiangqiFont = 'default' | 'lishu';
 export type XiangqiTexture = 'flat' | 'realistic';
 export type ChessBoardStyle = 'classic' | 'polished';
 export type MoveHistoryMode = 'hiddenDuringPlay' | 'compact' | 'always';
+export type XiangqiNotation = 'iccs' | 'traditional';
 
 export interface AppSettings {
   /** 2: show legal move dots */
@@ -18,8 +19,10 @@ export interface AppSettings {
   xiangqiTexture: XiangqiTexture;
   /** 8: chess board polish */
   chessBoardStyle: ChessBoardStyle;
-  /** global default difficulty per gameType? stored as last used */
-  /** 1: additional placeholder for future settings */
+  /** xiangqi traditional notation */
+  xiangqiNotation: XiangqiNotation;
+  /** auto watch delay in ms */
+  autoDelayMs: number;
 }
 
 const DEFAULTS: AppSettings = {
@@ -29,6 +32,8 @@ const DEFAULTS: AppSettings = {
   xiangqiFont: 'default',
   xiangqiTexture: 'flat',
   chessBoardStyle: 'polished',
+  xiangqiNotation: 'traditional',
+  autoDelayMs: 800,
 };
 
 const STORAGE_KEY = 'chesslab.settings.v1';

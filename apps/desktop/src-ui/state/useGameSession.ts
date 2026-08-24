@@ -85,6 +85,7 @@ export function useGameSession(args: {
   difficulty: 1 | 2 | 3 | 4 | 5;
   difficultySecond?: 1 | 2 | 3 | 4 | 5;
   stepMode?: boolean;
+  autoDelayMs?: number;
   /** W2: Tauri transport factories; omit for local two-player mode. */
   factories?: {
     engineRunnerFactory: EngineRunnerFactory;
@@ -92,11 +93,11 @@ export function useGameSession(args: {
   };
 }): {
   state: SessionUiState;
-  actions: SessionActions & { assistOn: boolean };
+  actions: SessionActions & { assistOn: boolean; isPaused: boolean; togglePause(): void };
   capabilities: SessionCapabilities;
   sessionRef: React.RefObject<GameSession | null>;
 } {
-  const { gameKey, gameType, mode, humanSide, difficulty, difficultySecond, stepMode, factories } = args;
+  const { gameKey, gameType, mode, humanSide, difficulty, difficultySecond, stepMode, autoDelayMs, factories } = args;
 
   const [state, setState] = useState<SessionUiState>({
     pieces: {},
@@ -109,6 +110,7 @@ export function useGameSession(args: {
     bootError: null,
   });
   const [assistOn, setAssistOn] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const sessionRef = useRef<GameSession | null>(null);
 
   useEffect(() => {
@@ -141,6 +143,7 @@ export function useGameSession(args: {
       white: playerFor('w'),
       black: playerFor('b'),
       autoPlay,
+      autoDelayMs: autoDelayMs ?? 0,
       ...(factories ? { engineRunnerFactory: factories.engineRunnerFactory, analysisFactory: factories.analysisFactory } : {}),
     });
     sessionRef.current = session;
@@ -218,14 +221,26 @@ export function useGameSession(args: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameKey]);
 
-  const actions = useMemo<SessionActions>(
+  // Sync auto delay / pause to session
+  useEffect(() => {
+    if (sessionRef.current) {
+      sessionRef.current.setAutoDelayMs(autoDelayMs ?? 0);
+    }
+  }, [autoDelayMs]);
+
+  useEffect(() => {
+    if (sessionRef.current) {
+      sessionRef.current.setAutoPaused(isPaused);
+    }
+  }, [isPaused]);
+
+  const actions = useMemo<SessionActions & { isPaused: boolean; togglePause(): void }>(
     () => ({
       playMove: uci => sessionRef.current?.playHumanMove(uci) ?? false,
       undo: () => sessionRef.current?.undo(),
       resign: () => {
         const s = sessionRef.current;
         if (!s) return;
-        // In eve mode, resign the side to move; otherwise human side
         const toResign = mode === 'eve' ? (s.rules.turn() as Side) : humanSide;
         s.resign(toResign);
       },
@@ -240,9 +255,13 @@ export function useGameSession(args: {
         setState(s => ({ ...s, assistLines: [] }));
       },
       step: () => sessionRef.current?.step() ?? false,
+      get isPaused() {
+        return isPaused;
+      },
+      togglePause: () => setIsPaused(v => !v),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [humanSide, mode],
+    [humanSide, mode, isPaused],
   );
 
   const capabilities: SessionCapabilities = useMemo(

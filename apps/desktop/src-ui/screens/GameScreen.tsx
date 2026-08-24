@@ -37,6 +37,7 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
     difficulty: cfg.difficulty,
     difficultySecond: cfg.difficultySecond,
     stepMode: cfg.stepMode,
+    autoDelayMs: cfg.autoDelayMs ?? settings.autoDelayMs,
     factories: cfg.mode === 'pvp' ? undefined : factories,
   });
 
@@ -171,6 +172,10 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
     }
   }, [actions, state.result]);
 
+  const onTogglePause = useCallback(() => {
+    actions.togglePause();
+  }, [actions]);
+
   // Item 8: 观战实时分析 — auto enable when eve
   useEffect(() => {
     if (cfg.mode === 'eve' && capabilities.assist && !actions.assistOn && !state.result) {
@@ -194,8 +199,10 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
           { label: '认输', tone: 'danger', onPress: () => actions.resign(), disabled: !!state.result },
         ];
       }
-      // auto eve
+      // auto eve - with pause and delay
+      const isPaused = (actions as any).isPaused as boolean | undefined;
       return [
+        { label: isPaused ? '继续' : '暂停', onPress: onTogglePause, disabled: !!state.result },
         { label: '悔棋', onPress: onUndo, disabled: state.history.length === 0 || !!state.result },
         { label: actions.assistOn ? '分析·开' : '分析·关', active: actions.assistOn, onPress: () => (actions.assistOn ? actions.disableAssist() : void actions.enableAssist()), disabled: !capabilities.assist },
         { label: '认输', tone: 'danger', onPress: () => actions.resign(), disabled: !!state.result },
@@ -258,6 +265,9 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
     }
     return state.history;
   }, [state.history, settings.moveHistoryMode, state.result]);
+
+  // For traditional notation, display is handled inside MoveListStrip/HistoryModal via gameType+notation prop
+  // No need to transform history here; the strip will generate traditional on the fly
 
   return (
     <div className={themeClassFor(cfg.gameType)} style={{ height: '100%', backgroundColor: theme.bg, display: 'flex', flexDirection: 'column' }}>
@@ -334,7 +344,7 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
       <ControlsBar theme={theme} controls={controls} />
 
       {showInlineStrip ? (
-        <MoveListStrip theme={theme} history={moveStripHistory} />
+        <MoveListStrip theme={theme} history={moveStripHistory} gameType={cfg.gameType} xiangqiNotation={settings.xiangqiNotation} />
       ) : (
         <div style={{ height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: theme.surfaceAlt }}>
           <button type="button" onClick={() => setShowFullHistory(true)} style={{ color: theme.textSecondary, fontSize: 11, padding: '6px 12px' }}>
@@ -343,7 +353,7 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
         </div>
       )}
 
-      {showFullHistory ? <HistoryModal theme={theme} history={state.history} onClose={() => setShowFullHistory(false)} /> : null}
+      {showFullHistory ? <HistoryModal theme={theme} history={state.history} gameType={cfg.gameType} xiangqiNotation={settings.xiangqiNotation} onClose={() => setShowFullHistory(false)} /> : null}
 
       <ResultOverlay
         visible={!!state.result && showResult}
@@ -351,6 +361,8 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
         headline={resultHeadline}
         detail=""
         history={state.history}
+        gameType={cfg.gameType}
+        xiangqiNotation={settings.xiangqiNotation}
         onNewGame={() => {
           setShowResult(false);
           setSelected(null);

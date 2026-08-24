@@ -13,6 +13,7 @@ export interface StartConfig {
   difficulty: 1 | 2 | 3 | 4 | 5;
   difficultySecond?: 1 | 2 | 3 | 4 | 5;
   stepMode?: boolean;
+  autoDelayMs?: number;
 }
 
 const C = {

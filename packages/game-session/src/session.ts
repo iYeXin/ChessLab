@@ -50,6 +50,8 @@ export interface SessionOptions {
   analysisFactory?: AssistEngineFactory;
   /** When false, engine moves require explicit step() (for 观战步进 mode). */
   autoPlay?: boolean;
+  /** Delay between auto moves in ms (for watch mode) */
+  autoDelayMs?: number;
 }
 
 /**
@@ -78,13 +80,34 @@ export class GameSession {
     pauseOnOpponentTurn: boolean;
   } = { pauseOnOpponentTurn: true };
   private hintRunner: EngineTurnRunner | null = null;
+  private autoPaused = false;
+  private autoDelayMs: number;
 
-  constructor(private opts: SessionOptions) {}
+  constructor(private opts: SessionOptions) {
+    this.autoDelayMs = opts.autoDelayMs ?? 0;
+  }
 
   // ---- lifecycle -----------------------------------------------------------
 
   get autoPlay(): boolean {
     return this.opts.autoPlay ?? true;
+  }
+
+  get isAutoPaused(): boolean {
+    return this.autoPaused;
+  }
+
+  setAutoPaused(paused: boolean): void {
+    if (this.autoPaused === paused) return;
+    this.autoPaused = paused;
+    if (!paused && this.autoPlay && !this.over && !this.disposed && !this.engineThinking) {
+      const cfg = this.currentPlayerConfig();
+      if (cfg?.kind === 'engine') void this.pumpEngineTurn();
+    }
+  }
+
+  setAutoDelayMs(ms: number): void {
+    this.autoDelayMs = Math.max(0, ms);
   }
 
   /** Manual step for 观战步进 mode: trigger one engine ply if it's engine's turn. */
@@ -383,7 +406,16 @@ export class GameSession {
     }
 
     this.emit({ kind: 'turn', side: this.rules.turn() });
-    if (this.autoPlay) void this.pumpEngineTurn();
+    if (this.autoPlay && !this.autoPaused) {
+      if (this.autoDelayMs > 0) {
+        const delay = this.autoDelayMs;
+        setTimeout(() => {
+          if (!this.disposed && !this.over && !this.autoPaused) void this.pumpEngineTurn();
+        }, delay);
+      } else {
+        void this.pumpEngineTurn();
+      }
+    }
     return true;
   }
 
