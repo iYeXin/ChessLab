@@ -24,7 +24,7 @@ export function App() {
       const cfg = route.cfg;
       return (
         <GameScreen
-          key={`${cfg.gameType}:${cfg.humanSide}`}
+          key={`${cfg.gameType}:${cfg.humanSide}:${cfg.difficulty}`}
           gameType={cfg.gameType as GameType}
           humanSide={cfg.humanSide as Side}
           difficulty={cfg.difficulty}

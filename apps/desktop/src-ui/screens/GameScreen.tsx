@@ -13,11 +13,12 @@ import {
   type ControlDef,
 } from '../components/GameChrome';
 import { useGameSession } from '../state/useGameSession';
+import { makeSessionFactories, shutdownEngines } from '../state/engines';
 
 /**
  * DOM port of apps/chessapp/src/screens/GameScreen.tsx.
- * Phase W1: runs without engines (local two-player); hint/assist controls are
- * disabled until the Tauri engine bridge lands (Phase W2).
+ * Phase W2: Tauri engine bridge enabled — human vs engine with full
+ * hint/assist. Falls back to local two-player if the engine fails to spawn.
  */
 
 const DIFF_LABEL = ['', '入门', '业余', '进阶', '大师', '特级'] as const;
@@ -31,12 +32,26 @@ export function GameScreen(props: {
   const theme = themeFor(props.gameType);
   const [gameKey, setGameKey] = useState(1);
   const [showResult, setShowResult] = useState(false);
+  const factories = useMemo(() => makeSessionFactories(props.gameType), [props.gameType]);
   const { state, actions, capabilities, sessionRef } = useGameSession({
     gameKey,
     gameType: props.gameType,
     humanSide: props.humanSide,
     difficulty: props.difficulty,
+    factories,
   });
+
+  const handleExit = useCallback(() => {
+    void shutdownEngines().then(props.onExit);
+  }, [props.onExit]);
+
+  // Ensure engines are cleaned up when the screen unmounts for any reason
+  // (not only via the Back button).
+  useEffect(() => {
+    return () => {
+      void shutdownEngines();
+    };
+  }, []);
 
   // ---- board sizing (RN used useWindowDimensions) --------------------------
   const areaRef = useRef<HTMLDivElement>(null);
@@ -161,7 +176,7 @@ export function GameScreen(props: {
             ? `${DIFF_LABEL[props.difficulty]} · ${props.gameType === 'chess' ? 'STOCKFISH 18' : 'PIKAFISH'}`
             : `本地双人对局 · ${DIFF_LABEL[props.difficulty]}`
         }
-        onBack={props.onExit}
+        onBack={handleExit}
         right={
           <span style={{ color: theme.textSecondary, fontSize: 10, paddingRight: 8 }}>
             {props.gameType === 'chess'

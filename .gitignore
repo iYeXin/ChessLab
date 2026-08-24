@@ -23,6 +23,8 @@ apps/*/windows/.vs/
 
 # engines / third_party artifacts (fetched by scripts, never committed)
 third_party/
+apps/desktop/engines/
+apps/desktop/src-tauri/target/
 *.nnue
 
 # misc

@@ -8,7 +8,8 @@
   <body>
     <div id="root"></div>
     <script>
-      // TEMP-DIAG: surface runtime errors on-screen (WebView console is hidden).
+      // Surface runtime errors on-screen while the WebView console is not
+      // attached (Tauri dev). Disabled in production builds via Vite define.
       (function () {
         function show(msg) {
           var el = document.createElement('pre');

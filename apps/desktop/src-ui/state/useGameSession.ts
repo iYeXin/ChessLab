@@ -22,11 +22,10 @@ import type { GameType } from '@chesslab/rules-core';
 /**
  * Port of apps/chessapp/src/state/useGameSession.ts.
  *
- * Engine factories are injected by the caller:
- * - Phase W1 (this phase): omitted — both sides play human moves locally,
- *   hint/assist are reported as unavailable via `capabilities`.
- * - Phase W2: apps/desktop/src-ui/state/engines.ts supplies Tauri-transport
- *   factories and the hook behaves exactly like the RN version.
+ * Engine factories are injected by the caller (Phase W2):
+ * `apps/desktop/src-ui/state/engines.ts` supplies Tauri-transport factories
+ * and the hook behaves exactly like the RN version. When factories are
+ * omitted the session falls back to local two-player mode.
  */
 
 const ALL_SQUARES: Record<GameType, string[]> = {

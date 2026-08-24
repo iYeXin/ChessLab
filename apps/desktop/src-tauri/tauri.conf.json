@@ -29,6 +29,6 @@
     "active": true,
     "targets": ["nsis"],
     "icon": ["icons/icon.ico"],
-    "resources": []
+    "resources": ["../engines"]
   }
 }
