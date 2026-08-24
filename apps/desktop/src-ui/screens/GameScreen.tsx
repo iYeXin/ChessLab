@@ -6,6 +6,7 @@ import { XiangqiBoardView } from '../components/XiangqiBoardView';
 import {
   AssistPanel,
   ControlsBar,
+  HistoryModal,
   MoveListStrip,
   ResultOverlay,
   StatusBanner,
@@ -164,23 +165,39 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
   }, [actions]);
 
   const onStep = useCallback(() => {
-    actions.step();
-  }, [actions]);
+    const ok = actions.step();
+    if (!ok && state.result) {
+      // no-op when game over
+    }
+  }, [actions, state.result]);
+
+  // Item 8: 观战实时分析 — auto enable when eve
+  useEffect(() => {
+    if (cfg.mode === 'eve' && capabilities.assist && !actions.assistOn && !state.result) {
+      // Use pauseOnOpponentTurn:false so analysis runs even while engines think
+      void actions.enableAssist().then(() => {
+        // override to keep running during engine thinking
+        sessionRef.current?.enableAssist({ multiPv: 3, budgetMs: 1500, pauseOnOpponentTurn: false }).catch(() => {});
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg.mode, capabilities.assist, state.result]);
 
   // Controls: adapt for mode
   const controls: ControlDef[] = useMemo(() => {
     if (capabilities.isEngineVsEngine) {
       if (capabilities.isStepMode) {
+        const canStep = !state.result && !state.thinkingSide;
         return [
-          { label: '下一步', onPress: onStep, disabled: !!state.result || !!state.thinkingSide },
+          { label: '下一步', onPress: onStep, disabled: !canStep },
           { label: '悔棋', onPress: onUndo, disabled: state.history.length === 0 || !!state.result },
           { label: '认输', tone: 'danger', onPress: () => actions.resign(), disabled: !!state.result },
         ];
       }
       // auto eve
       return [
-        { label: '暂停', onPress: () => {}, disabled: true },
         { label: '悔棋', onPress: onUndo, disabled: state.history.length === 0 || !!state.result },
+        { label: actions.assistOn ? '分析·开' : '分析·关', active: actions.assistOn, onPress: () => (actions.assistOn ? actions.disableAssist() : void actions.enableAssist()), disabled: !capabilities.assist },
         { label: '认输', tone: 'danger', onPress: () => actions.resign(), disabled: !!state.result },
       ];
     }
@@ -233,18 +250,11 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
     return cfg.gameType === 'chess' ? (cfg.humanSide === 'w' ? '执白' : '执黑') : cfg.humanSide === 'w' ? '执红' : '执黑';
   })();
 
-  // Move history rendering policy - item 3
-  const showMoveStrip = (() => {
-    if (settings.moveHistoryMode === 'always') return true;
-    if (settings.moveHistoryMode === 'compact') return true; // but compact will limit inside component
-    // hiddenDuringPlay: hide during play, show after result
-    return !!state.result;
-  })();
-
+  // Move history rendering policy - item 3+4: hiddenDuringPlay uses modal, not inline
+  const showInlineStrip = settings.moveHistoryMode === 'always' || settings.moveHistoryMode === 'compact';
   const moveStripHistory = useMemo(() => {
     if (settings.moveHistoryMode === 'compact' && !state.result) {
-      // show last 5 moves only during play
-      return state.history.slice(-10); // 5 pairs
+      return state.history.slice(-10); // 5 pairs during play
     }
     return state.history;
   }, [state.history, settings.moveHistoryMode, state.result]);
@@ -316,31 +326,22 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
 
       {actions.assistOn && capabilities.assist ? <AssistPanel theme={theme} lines={state.assistLines} historyLast={lastEntry} /> : null}
 
+      {/* Eve live analysis (item 8) - show assist-like live PV during engine vs engine */}
+      {capabilities.isEngineVsEngine && state.assistLines.length > 0 ? <AssistPanel theme={theme} lines={state.assistLines} historyLast={lastEntry} /> : null}
+
       <ControlsBar theme={theme} controls={controls} />
 
-      {showMoveStrip ? (
+      {showInlineStrip ? (
         <MoveListStrip theme={theme} history={moveStripHistory} />
       ) : (
         <div style={{ height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: theme.surfaceAlt }}>
           <button type="button" onClick={() => setShowFullHistory(true)} style={{ color: theme.textSecondary, fontSize: 11, padding: '6px 12px' }}>
-            着法 {state.history.length} 步 · 对局结束后可查看完整记录
+            {state.result ? `查看着法记录（${state.history.length}步）` : `着法 ${state.history.length} 步 · 点击查看`}
           </button>
         </div>
       )}
 
-      {/* Full history sheet when hiddenDuringPlay and user requests */}
-      {showFullHistory ? (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,15,8,0.45)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 50 }} onClick={() => setShowFullHistory(false)}>
-          <div style={{ width: '100%', maxWidth: 480, maxHeight: '60%', background: theme.surface, borderTopLeftRadius: 12, borderTopRightRadius: 12, padding: 'var(--sp-l)', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--sp-m)' }}>
-              <span style={{ fontWeight: 700, color: theme.textPrimary }}>着法记录</span>
-              <button type="button" onClick={() => setShowFullHistory(false)} style={{ color: theme.accent, fontSize: 12 }}>关闭</button>
-            </div>
-            <MoveListStrip theme={theme} history={state.history} />
-            <div style={{ height: 12 }} />
-          </div>
-        </div>
-      ) : null}
+      {showFullHistory ? <HistoryModal theme={theme} history={state.history} onClose={() => setShowFullHistory(false)} /> : null}
 
       <ResultOverlay
         visible={!!state.result && showResult}

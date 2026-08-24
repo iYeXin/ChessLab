@@ -41,17 +41,19 @@ export function ChessBoardView(props: Props) {
       : ['h', 'g', 'f', 'e', 'd', 'c', 'b', 'a'];
   const ranks = orientation === 'w' ? [8, 7, 6, 5, 4, 3, 2, 1] : [1, 2, 3, 4, 5, 6, 7, 8];
 
-  // Item 8: polished style adds gradient, inner shadow, rounded corners
+  // Item 7: refined polished board - walnut bevel, inset board shadow, elegant coords
   const frameStyle: React.CSSProperties = polished
     ? {
         width: cell * 8 + 26,
         height: cell * 8 + 26,
-        background: `linear-gradient(145deg, ${theme.board.frame} 0%, #3e2e20 100%)`,
-        border: `2px solid ${theme.board.frameBorder}`,
-        borderRadius: 6,
-        boxShadow: '0 4px 12px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.15)',
+        background: `linear-gradient(145deg, #4a3728 0%, #5d4634 25%, #6b543e 50%, #5d4634 75%, #3e2e20 100%)`,
+        border: `1px solid #2a1e12`,
+        borderRadius: 8,
+        boxShadow: '0 10px 28px rgba(0,0,0,0.35), 0 2px 6px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.4)',
         display: 'flex',
         overflow: 'hidden',
+        padding: 3,
+        boxSizing: 'border-box',
       }
     : {
         width: cell * 8 + 26,
@@ -61,26 +63,19 @@ export function ChessBoardView(props: Props) {
         display: 'flex',
       };
 
+  const coordColor = polished ? '#e8d5b5' : theme.board.coordText;
   return (
     <div className={`chess-board ${polished ? 'polished' : ''}`} style={frameStyle}>
       {/* rank labels */}
-      <div style={{ width: 13 }}>
+      <div style={{ width: 13, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
         {ranks.map(r => (
-          <div
-            key={r}
-            style={{
-              height: cell,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <span style={{ color: theme.board.coordText, fontSize: 9, fontWeight: 600 }}>{r}</span>
+          <div key={r} style={{ height: cell, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ color: coordColor, fontSize: polished ? 8 : 9, fontWeight: polished ? 500 : 600, opacity: polished ? 0.9 : 1, letterSpacing: 0.3 }}>{r}</span>
           </div>
         ))}
       </div>
 
-      <div>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, boxShadow: polished ? 'inset 0 0 10px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08)' : undefined, borderRadius: polished ? 3 : 0, overflow: 'hidden' }}>
         <div>
           {chunk(points, 8).map((row, ri) => (
             <div key={ri} style={{ display: 'flex' }}>
@@ -88,25 +83,32 @@ export function ChessBoardView(props: Props) {
                 const sq = keyOf(p);
                 const piece = pieces[sq];
                 const isDark = (fileIdx(p) + rankIdxChess(p)) % 2 === 1;
+                const light = polished ? '#f0d9b5' : theme.board.lightSquare;
+                const dark = polished ? '#b58863' : theme.board.darkSquare;
+                // polished squares get subtle inner highlight
+                const sqBg = isDark ? dark : light;
                 return (
                   <SquareCell
                     key={sq}
                     square={sq}
                     cell={cell}
-                    baseColor={isDark ? theme.board.darkSquare : theme.board.lightSquare}
+                    baseColor={sqBg}
                     layer={props}
+                    polished={polished}
                     onPress={() => onPressPoint(p)}
                   >
                     {piece ? (
                       <span
                         style={{
                           color: theme.pieces[piece.side].fg,
-                          fontSize: cell * 0.72,
-                          fontWeight: 700,
+                          fontSize: cell * 0.68,
+                          fontWeight: 750,
                           lineHeight: 1,
+                          fontFamily: polished ? '"Segoe UI Symbol", "Noto Sans Symbols2", "DejaVu Sans", sans-serif' : undefined,
                           textShadow: polished
-                            ? `0 1px 3px ${theme.pieces[piece.side].shadow}, 0 0 1px rgba(0,0,0,0.3)`
+                            ? `0 2px 4px ${theme.pieces[piece.side].shadow}, 0 1px 0 rgba(0,0,0,0.4)`
                             : `0 1px 2px ${theme.pieces[piece.side].shadow}`,
+                          filter: polished ? 'drop-shadow(0 1px 1px rgba(0,0,0,0.35))' : undefined,
                           transform: flipOpponentPieces && piece.side !== orientation ? 'rotate(180deg)' : undefined,
                           display: 'inline-block',
                         }}
@@ -121,20 +123,10 @@ export function ChessBoardView(props: Props) {
           ))}
         </div>
         {/* file labels */}
-        <div style={{ display: 'flex', height: 13 }}>
+        <div style={{ display: 'flex', height: 13, backgroundColor: polished ? 'rgba(0,0,0,0.04)' : 'transparent' }}>
           {files.map(f => (
-            <div
-              key={f}
-              style={{
-                width: cell,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <span style={{ color: theme.board.coordText, fontSize: 9, fontWeight: 600 }}>
-                {f}
-              </span>
+            <div key={f} style={{ width: cell, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ color: coordColor, fontSize: polished ? 8 : 9, fontWeight: polished ? 500 : 600, opacity: polished ? 0.9 : 1, letterSpacing: 0.3 }}>{f}</span>
             </div>
           ))}
         </div>
@@ -148,6 +140,7 @@ function SquareCell({
   cell,
   baseColor,
   layer,
+  polished,
   onPress,
   children,
 }: {
@@ -155,30 +148,31 @@ function SquareCell({
   cell: number;
   baseColor: string;
   layer: BoardLayerProps;
+  polished?: boolean;
   onPress(): void;
   children?: React.ReactNode;
 }) {
   let overlay: string | null = null;
-  if (layer.lastFrom === square || layer.lastTo === square) overlay = 'rgba(230,180,90,0.45)';
-  if (layer.selected === square) overlay = 'rgba(120,170,90,0.55)';
+  if (layer.lastFrom === square || layer.lastTo === square) overlay = polished ? 'rgba(232,185,108,0.42)' : 'rgba(230,180,90,0.45)';
+  if (layer.selected === square) overlay = polished ? 'rgba(130,175,95,0.52)' : 'rgba(120,170,90,0.55)';
   if (layer.hint && (layer.hint.from === square || layer.hint.to === square)) {
-    overlay = 'rgba(70,130,190,0.50)';
+    overlay = polished ? 'rgba(82,138,190,0.48)' : 'rgba(70,130,190,0.50)';
   }
   const isTarget = layer.targets.has(square);
 
   return (
-    <PressableCell size={cell} color={baseColor} onPress={onPress}>
-      {overlay ? (
-        <div style={{ position: 'absolute', inset: 0, backgroundColor: overlay }} />
-      ) : null}
+    <PressableCell size={cell} color={baseColor} onPress={onPress} polished={polished}>
+      {overlay ? <div style={{ position: 'absolute', inset: 0, backgroundColor: overlay, border: polished ? '1px solid rgba(255,255,255,0.12)' : undefined }} /> : null}
       {isTarget ? (
         <div
           style={{
             position: 'absolute',
-            width: cell * 0.28,
-            height: cell * 0.28,
+            width: cell * 0.26,
+            height: cell * 0.26,
             borderRadius: cell,
-            backgroundColor: 'rgba(40,80,40,0.42)',
+            backgroundColor: polished ? 'rgba(45,75,45,0.38)' : 'rgba(40,80,40,0.42)',
+            boxShadow: polished ? 'inset 0 1px 2px rgba(0,0,0,0.25), 0 0 0 1px rgba(255,255,255,0.15)' : undefined,
+            border: polished ? '1px solid rgba(255,255,255,0.18)' : undefined,
           }}
         />
       ) : null}
@@ -192,11 +186,13 @@ function PressableCell({
   size,
   color,
   onPress,
+  polished,
   children,
 }: {
   size: number;
   color: string;
   onPress(): void;
+  polished?: boolean;
   children?: React.ReactNode;
 }) {
   return (
@@ -212,6 +208,7 @@ function PressableCell({
         alignItems: 'center',
         justifyContent: 'center',
         position: 'relative',
+        boxShadow: polished ? 'inset 0 0 0 0.5px rgba(0,0,0,0.06)' : undefined,
       }}
     >
       {children}

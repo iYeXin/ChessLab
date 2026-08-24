@@ -46,26 +46,40 @@ export async function platformOptionsFor(
   return { EvalFile: nnue };
 }
 
-const drivers = new Map<string, UciEngineDriver>();
+const assistDrivers = new Map<string, UciEngineDriver>();
+const gameDrivers = new Set<UciEngineDriver>();
 
-async function driverFor(
-  profileId: 'stockfish' | 'pikafish',
-  scope: 'game' | 'assist',
-): Promise<UciEngineDriver> {
-  const key = `${profileId}:${scope}`;
-  const existing = drivers.get(key);
+async function driverForAssist(profileId: 'stockfish' | 'pikafish'): Promise<UciEngineDriver> {
+  const key = `${profileId}:assist`;
+  const existing = assistDrivers.get(key);
   if (existing && existing.isAlive) return existing;
-
   const profile: EngineProfile = getProfile(profileId);
   const extra = await platformOptionsFor(profileId);
-
-  drivers.delete(key);
+  assistDrivers.delete(key);
   const driver = new UciEngineDriver(profile);
   const transport = await createTauriTransport(profileId);
   await driver.start(transport);
   if (Object.keys(extra).length > 0) await driver.setOptions(extra);
   await driver.newGame();
-  drivers.set(key, driver);
+  assistDrivers.set(key, driver);
+  return driver;
+}
+
+async function createGameDriver(profileId: 'stockfish' | 'pikafish'): Promise<UciEngineDriver> {
+  const profile: EngineProfile = getProfile(profileId);
+  const extra = await platformOptionsFor(profileId);
+  const driver = new UciEngineDriver(profile);
+  const transport = await createTauriTransport(profileId);
+  await driver.start(transport);
+  if (Object.keys(extra).length > 0) await driver.setOptions(extra);
+  await driver.newGame();
+  gameDrivers.add(driver);
+  // Remove from set when quit
+  const origQuit = driver.quit.bind(driver);
+  driver.quit = async () => {
+    gameDrivers.delete(driver);
+    return origQuit();
+  };
   return driver;
 }
 
@@ -82,13 +96,13 @@ export function makeSessionFactories(gameType: GameType): {
 
   return {
     engineRunnerFactory: async () => {
-      const driver = await driverFor(pid, 'game');
+      const driver = await createGameDriver(pid);
       const { createUciRunner } = await import('@chesslab/game-session');
       return createUciRunner(driver);
     },
     analysisFactory: async () => {
       const { createUciAssistEngine } = await import('@chesslab/game-session');
-      const driver = await driverFor(pid, 'assist');
+      const driver = await driverForAssist(pid);
       return createUciAssistEngine(driver);
     },
   };
@@ -96,8 +110,10 @@ export function makeSessionFactories(gameType: GameType): {
 
 /** Kill every spawned engine process (called when leaving a game screen). */
 export async function shutdownEngines(): Promise<void> {
-  for (const d of drivers.values()) await d.quit().catch(() => undefined);
-  drivers.clear();
+  for (const d of assistDrivers.values()) await d.quit().catch(() => undefined);
+  assistDrivers.clear();
+  for (const d of [...gameDrivers]) await d.quit().catch(() => undefined);
+  gameDrivers.clear();
 }
 
 export { PIKAFISH_PROFILE, STOCKFISH_PROFILE };

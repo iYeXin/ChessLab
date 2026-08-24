@@ -167,10 +167,9 @@ export function useGameSession(args: {
         case 'started':
         case 'move':
         case 'turn': {
-          const thinking =
-            e.kind === 'turn' && session.currentPlayerConfig()?.kind === 'engine'
-              ? e.side
-              : null;
+          // In stepMode, don't auto-show thinking; wait for explicit step()
+          const isEngineTurn = session.currentPlayerConfig()?.kind === 'engine';
+          const thinking = e.kind === 'turn' && isEngineTurn && session.autoPlay ? (e.side as Side) : null;
           setState(s => ({ ...s, thinkingSide: thinking }));
           snapshot();
           break;

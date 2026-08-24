@@ -311,7 +311,8 @@ function Disc({
 }) {
   const style = theme.pieces[piece.side];
   const char = XIANGQI_CHARS[piece.side][piece.type] ?? '?';
-  const fontFamily = font === 'lishu' ? '"Ma Shan Zheng", "LiSu", "STKaiti", "KaiTi", cursive' : '"Noto Serif SC", "SimSun", serif';
+  // 1. 黑体就是黑体：默认用无衬线黑体；隶书用内嵌隶书
+  const fontFamily = font === 'lishu' ? '"ChessLishu", "LiSu", "STKaiti", "KaiTi", cursive' : '"Noto Sans SC", "Microsoft YaHei UI", "PingFang SC", "Heiti SC", sans-serif';
   return (
     <div
       style={{
@@ -341,7 +342,6 @@ function Disc({
           fontWeight: 700,
           lineHeight: `${diameter * 0.62}px`,
           fontFamily,
-          transform: flip ? 'rotate(180deg)' : undefined,
           display: 'inline-block',
         }}
       >

@@ -6,6 +6,14 @@
  */
 
 /* Game-agnostic layout tokens (was theme/tokens.ts). */
+@font-face {
+  font-family: 'ChessLishu';
+  src: url('./fonts/ChessLishu.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --sp-xs: 4px;
   --sp-s: 8px;

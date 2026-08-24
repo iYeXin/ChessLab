@@ -327,61 +327,99 @@ export function ResultOverlay(props: {
   const hasHistory = !!props.history && props.history.length > 0;
 
   return (
-    <div
-      className="result-overlay"
-      style={{
-        position: 'fixed',
-        inset: 0,
-        backgroundColor: 'rgba(20,15,8,0.55)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 'var(--sp-xl)',
-        animation: 'fadeIn 160ms ease-out',
-      }}
-      onClick={props.onClose}
-    >
+    <>
       <div
-        className="result-card"
+        className="result-overlay"
         style={{
-          width: '100%',
-          maxWidth: 340,
-          borderRadius: 14,
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(20,15,8,0.55)',
           display: 'flex',
-          flexDirection: 'column',
           alignItems: 'center',
+          justifyContent: 'center',
           padding: 'var(--sp-xl)',
-          backgroundColor: theme.surface,
-          boxShadow: '0 12px 40px rgba(20,15,8,0.35)',
-          maxHeight: '80vh',
-          overflowY: 'auto',
+          animation: 'fadeIn 160ms ease-out',
         }}
+        onClick={props.onClose}
+      >
+        <div
+          className="result-card"
+          style={{
+            width: '100%',
+            maxWidth: 340,
+            borderRadius: 14,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            padding: 'var(--sp-xl)',
+            backgroundColor: theme.surface,
+            boxShadow: '0 12px 40px rgba(20,15,8,0.35)',
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          <span style={{ fontSize: 22, fontWeight: 800, color: theme.textPrimary }}>{props.headline}</span>
+          <span style={{ color: theme.textSecondary, marginTop: 4, marginBottom: 'var(--sp-m)', fontSize: 13 }}>{props.detail}</span>
+
+          {hasHistory ? (
+            <button
+              type="button"
+              onClick={() => setShowHistory(true)}
+              style={{ marginBottom: 'var(--sp-m)', padding: '6px 12px', borderRadius: 8, border: `1px solid ${theme.surfaceAlt}`, background: theme.surfaceAlt, color: theme.textPrimary, fontSize: 12 }}
+            >
+              查看着法（{props.history!.length}步）
+            </button>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={props.onNewGame}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px 0', borderRadius: 10, backgroundColor: theme.accent }}
+          >
+            <span style={{ color: '#FFF8EE', fontWeight: 700 }}>再来一局</span>
+          </button>
+          <button type="button" onClick={props.onClose} style={{ marginTop: 'var(--sp-m)', padding: '4px 8px' }}>
+            <span style={{ color: theme.textSecondary, fontSize: 12 }}>回看棋盘</span>
+          </button>
+        </div>
+      </div>
+      {showHistory && hasHistory ? <HistoryModal theme={theme} history={props.history!} onClose={() => setShowHistory(false)} /> : null}
+    </>
+  );
+}
+
+export function HistoryModal(props: { theme: GameTheme; history: readonly HistoryEntry[]; onClose(): void }) {
+  const { theme } = props;
+  const pairs: string[] = [];
+  for (let i = 0; i < props.history.length; i += 2) {
+    const w = props.history[i]?.san ?? '';
+    const b = props.history[i + 1]?.san ?? '';
+    pairs.push(`${i / 2 + 1}. ${w}${b ? ` ${b}` : ''}`);
+  }
+  return (
+    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(20,15,8,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--sp-xl)', zIndex: 60 }} onClick={props.onClose}>
+      <div
+        style={{ width: '100%', maxWidth: 360, maxHeight: '70vh', backgroundColor: theme.surface, borderRadius: 12, padding: 'var(--sp-l)', display: 'flex', flexDirection: 'column', boxShadow: '0 12px 40px rgba(20,15,8,0.35)' }}
         onClick={e => e.stopPropagation()}
       >
-        <span style={{ fontSize: 22, fontWeight: 800, color: theme.textPrimary }}>{props.headline}</span>
-        <span style={{ color: theme.textSecondary, marginTop: 4, marginBottom: 'var(--sp-m)', fontSize: 13 }}>{props.detail}</span>
-
-        {hasHistory && !showHistory ? (
-          <button type="button" onClick={() => setShowHistory(true)} style={{ marginBottom: 'var(--sp-m)', padding: '6px 12px', borderRadius: 8, border: `1px solid ${theme.surfaceAlt}`, background: theme.surfaceAlt, color: theme.textPrimary, fontSize: 12 }}>
-            查看着法（{props.history!.length}步）
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--sp-m)' }}>
+          <span style={{ fontWeight: 700, color: theme.textPrimary }}>着法记录</span>
+          <button type="button" onClick={props.onClose} style={{ color: theme.accent, fontSize: 12, padding: '4px 8px' }}>
+            关闭
           </button>
-        ) : null}
-        {showHistory && hasHistory ? (
-          <div style={{ width: '100%', marginBottom: 'var(--sp-m)', maxHeight: 160, overflowY: 'auto', border: `1px solid ${theme.surfaceAlt}`, borderRadius: 8, padding: 'var(--sp-s)' }}>
-            <MoveListStrip theme={theme} history={props.history!} />
-          </div>
-        ) : null}
-
-        <button
-          type="button"
-          onClick={props.onNewGame}
-          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px 0', borderRadius: 10, backgroundColor: theme.accent }}
-        >
-          <span style={{ color: '#FFF8EE', fontWeight: 700 }}>再来一局</span>
-        </button>
-        <button type="button" onClick={props.onClose} style={{ marginTop: 'var(--sp-m)', padding: '4px 8px' }}>
-          <span style={{ color: theme.textSecondary, fontSize: 12 }}>回看棋盘</span>
-        </button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {pairs.length === 0 ? (
+            <span style={{ color: theme.textSecondary, fontSize: 12 }}>暂无着法</span>
+          ) : (
+            pairs.map((p, i) => (
+              <div key={i} style={{ display: 'flex', gap: 8, padding: '6px 8px', borderRadius: 6, backgroundColor: i % 2 === 0 ? theme.surfaceAlt : 'transparent' }}>
+                <span style={{ color: theme.textSecondary, fontSize: 12, minWidth: 24 }}>{i + 1}.</span>
+                <span style={{ color: theme.textPrimary, fontSize: 12 }}>{p.replace(/^\d+\.\s*/, '')}</span>
+              </div>
+            ))
+          )}
+        </div>
+        <div style={{ marginTop: 'var(--sp-m)', color: theme.textSecondary, fontSize: 10, textAlign: 'center' }}>共 {props.history.length} 步</div>
       </div>
     </div>
   );
