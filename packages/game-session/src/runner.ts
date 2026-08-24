@@ -4,7 +4,12 @@ import type {
   UciOptionValue,
   UciEngineDriver,
 } from '@chesslab/engine-uci';
-import { computeStrengthOptions, pickThinkTimeMs } from '@chesslab/engine-uci';
+import {
+  choosePikafishMove,
+  computeStrengthOptions,
+  pickThinkTimeMs,
+  pikafishSpecForLevel,
+} from '@chesslab/engine-uci';
 import type { MoveUci } from '@chesslab/rules-core';
 
 /**
@@ -49,28 +54,51 @@ export function createUciRunner(
     async requestMove({ fen, moves, level, clock, onInfo }) {
       const gen = currentGen + 1;
 
-      const strength = computeStrengthOptions(
-        driver.profile,
-        driver.availableOptions as ReadonlyMap<string, unknown>,
-        level,
-      );
-      if (Object.keys(strength).length > 0) await driver.setOptions(strength);
+      const isPikafish = driver.id === 'pikafish';
+      const spec = isPikafish ? pikafishSpecForLevel(level, clock) : null;
 
-      // If cancel() happened while we were applying strength options, bail out
-      // before issuing another `go` to a cancelled request.
+      // Apply host-side weakening knobs before the search.
+      if (isPikafish && spec) {
+        if (spec.multiPv > 1) await driver.setOptions({ MultiPV: spec.multiPv });
+        else await driver.setOptions({ MultiPV: 1 });
+      } else {
+        const strength = computeStrengthOptions(
+          driver.profile,
+          driver.availableOptions as ReadonlyMap<string, unknown>,
+          level,
+        );
+        if (Object.keys(strength).length > 0) await driver.setOptions(strength);
+      }
+
       if (gen <= currentGen) return { bestmove: null };
       currentGen = gen;
 
-      const limits: GoLimits = { movetimeMs: pickThinkTimeMs(level, clock) };
+      const limits: GoLimits = isPikafish && spec ? spec.limits : { movetimeMs: pickThinkTimeMs(level, clock) };
+
+      // For Pikafish we collect MultiPV infos and stochastically pick a blunder
+      // candidate (host-emulated Skill Level). Stockfish keeps its own
+      // UCI_Elo / Skill Level handling.
+      const infos = isPikafish && spec && spec.multiPv > 1 ? new Map<number, EngineInfo>() : null;
 
       return await new Promise<{ bestmove: MoveUci | null }>((resolve, reject) => {
         driver
           .search({ fen, moves }, limits, info => {
-            if (gen === currentGen) onInfo?.(info);
+            if (gen !== currentGen) return;
+            if (infos && info.multipv !== undefined) {
+              const prev = infos.get(info.multipv);
+              if (!prev || (info.depth ?? 0) >= (prev.depth ?? 0)) infos.set(info.multipv, info);
+            }
+            onInfo?.(info);
           })
           .then(
             r => {
-              if (gen === currentGen) resolve(r);
+              if (gen !== currentGen) return;
+              if (infos && spec && r.bestmove) {
+                const chosen = choosePikafishMove(infos, r.bestmove, spec);
+                resolve({ bestmove: chosen });
+              } else {
+                resolve(r);
+              }
             },
             e => {
               if (gen === currentGen) reject(e instanceof Error ? e : new Error(String(e)));
