@@ -272,11 +272,13 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
       <StatusBanner
         theme={theme}
         turn={state.turn}
-        humanSide={cfg.mode === 'pvp' ? state.turn : cfg.mode === 'eve' ? state.turn : cfg.humanSide}
+        humanSide={cfg.mode === 'pvp' ? state.turn : cfg.humanSide}
         thinkingSide={state.thinkingSide}
         check={state.check}
         bootError={state.bootError}
         result={state.result}
+        gameType={cfg.gameType}
+        isWatch={cfg.mode === 'eve'}
       />
 
       <div

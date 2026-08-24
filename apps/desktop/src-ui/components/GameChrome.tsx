@@ -70,10 +70,18 @@ export function StatusBanner(props: {
   check: boolean;
   bootError: string | null;
   result: GameResult | null;
+  gameType?: import('@chesslab/rules-core').GameType;
+  isWatch?: boolean;
 }) {
   const { theme } = props;
   let text = '';
   let color = theme.textSecondary;
+
+  const sideLabel = (side: Side) => {
+    if (props.gameType === 'xiangqi') return side === 'w' ? '红' : '黑';
+    if (props.gameType === 'chess') return side === 'w' ? '白' : '黑';
+    return side === 'w' ? '红/白' : '黑';
+  };
 
   if (props.bootError) {
     text = `引擎异常：${props.bootError}`;
@@ -82,12 +90,15 @@ export function StatusBanner(props: {
     text = describeResult(props.result, props.humanSide);
     color = theme.accent;
   } else if (props.thinkingSide) {
-    text = '思考中…';
+    const thinkSide = sideLabel(props.thinkingSide);
+    text = `${thinkSide}思考中…`;
+  } else if (props.isWatch) {
+    text = `${sideLabel(props.turn)}方回合${props.check ? ' · 将军!' : ''}`;
+    if (props.check) color = theme.danger;
+    else color = theme.textSecondary;
   } else {
     const yours = props.turn === props.humanSide;
-    text = `${yours ? '你的回合' : '对方回合'} · ${props.turn === 'w' ? '红/白' : '黑'}${
-      props.check ? ' · 将军!' : ''
-    }`;
+    text = `${yours ? '你的回合' : '对方回合'} · ${sideLabel(props.turn)}${props.check ? ' · 将军!' : ''}`;
     if (props.check) color = theme.danger;
     else if (yours) color = theme.ok;
   }
