@@ -30,6 +30,24 @@ static NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new
 // ---------------------------------------------------------------------------
 
 fn resolve_binary(app: &AppHandle, profile: &str) -> Result<std::path::PathBuf, String> {
+    // 0. Android: nativeLibraryDir (jniLibs) — libstockfish.so etc.
+    #[cfg(target_os = "android")]
+    {
+        if let Some(native_dir) = get_android_native_library_dir() {
+            let p = native_dir.join(binary_name(profile));
+            if p.exists() {
+                return Ok(p);
+            }
+        }
+        // Also try resource_dir as fallback (for dev)
+        if let Ok(resource_dir) = app.path().resource_dir() {
+            let p = resource_dir.join(binary_name(profile));
+            if p.exists() {
+                return Ok(p);
+            }
+        }
+    }
+
     // 1. bundled resources (production): resource_dir()/engines/<name>
     if let Ok(resource_dir) = app.path().resource_dir() {
         let candidate: std::path::PathBuf = resource_dir.join("engines").join(binary_name(profile));
@@ -131,14 +149,73 @@ fn resolve_binary(app: &AppHandle, profile: &str) -> Result<std::path::PathBuf, 
 }
 
 fn binary_name(profile: &str) -> String {
-    match profile {
-        "stockfish" => "stockfish.exe".to_string(),
-        "pikafish" => "pikafish.exe".to_string(),
-        other => format!("{}.exe", other),
+    #[cfg(target_os = "android")]
+    {
+        return match profile {
+            "stockfish" => "libstockfish.so".to_string(),
+            "pikafish" => "libpikafish.so".to_string(),
+            other => format!("lib{}.so", other),
+        };
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        return match profile {
+            "stockfish" => "stockfish.exe".to_string(),
+            "pikafish" => "pikafish.exe".to_string(),
+            other => format!("{}.exe", other),
+        };
     }
 }
 
+#[cfg(target_os = "android")]
+fn get_android_native_library_dir() -> Option<std::path::PathBuf> {
+    // On Android, the Rust lib itself lives in nativeLibraryDir, so its parent is the dir we need.
+    // This avoids fragile JNI calls and works for all ABIs.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            if dir.join("libstockfish.so").exists() || dir.join("libpikafish.so").exists() {
+                return Some(dir.to_path_buf());
+            }
+        }
+    }
+    // Fallback: try JNI query
+    let ctx = ndk_context::android_context();
+    let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }.ok()?;
+    let mut env = vm.attach_current_thread().ok()?;
+    let activity = unsafe { jni::objects::JObject::from_raw(ctx.context().cast()) };
+    let app_ctx = env
+        .call_method(&activity, "getApplicationContext", "()Landroid/content/Context;", &[])
+        .ok()?
+        .l()
+        .ok()?;
+    let app_info = env
+        .call_method(&app_ctx, "getApplicationInfo", "()Landroid/content/pm/ApplicationInfo;", &[])
+        .ok()?
+        .l()
+        .ok()?;
+    let native_dir_jstr = env
+        .get_field(&app_info, "nativeLibraryDir", "Ljava/lang/String;")
+        .ok()?
+        .l()
+        .ok()?;
+    let jstr: jni::objects::JString = native_dir_jstr.into();
+    let rust_str: String = env.get_string(&jstr).ok()?.into();
+    Some(std::path::PathBuf::from(rust_str))
+}
+
 fn nnue_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "android")]
+    {
+        if let Some(native_dir) = get_android_native_library_dir() {
+            // We package nnue as libpikafish_nnue.so in jniLibs
+            for name in ["libpikafish_nnue.so", "pikafish.nnue"] {
+                let p = native_dir.join(name);
+                if p.exists() {
+                    return Some(p);
+                }
+            }
+        }
+    }
     if let Ok(resource_dir) = app.path().resource_dir() {
         let p: std::path::PathBuf = resource_dir.join("engines").join("pikafish.nnue");
         if p.exists() {
