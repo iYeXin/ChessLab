@@ -47,6 +47,22 @@ body,
   overflow: hidden;
 }
 
+/* Hide scrollbars but keep scroll (especially Settings) */
+* {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+*::-webkit-scrollbar {
+  display: none; /* Chrome/Safari/WebView2 */
+}
+.scrollable {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollable::-webkit-scrollbar {
+  display: none;
+}
+
 button {
   font-family: inherit;
   border: none;

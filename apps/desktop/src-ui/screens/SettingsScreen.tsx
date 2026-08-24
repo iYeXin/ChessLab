@@ -10,7 +10,7 @@ export function SettingsScreen(props: { onBack(): void }) {
   return (
     <div className={themeClassFor('chess')} style={{ height: '100%', backgroundColor: '#F1EADC', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <TopBar theme={theme} title="设置" subtitle="SETTINGS" onBack={props.onBack} />
-      <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--sp-l) var(--sp-l)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-l)', maxWidth: 480, width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
+      <div className="scrollable" style={{ flex: 1, overflowY: 'auto', padding: 'var(--sp-l) var(--sp-l)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-l)', maxWidth: 480, width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
         <SettingSection title="对局显示">
           <ToggleRow label="显示可走位置" desc="选中棋子时高亮可落点" value={settings.showLegalTargets} onChange={v => update('showLegalTargets', v)} />
           <ToggleRow label="翻转对方棋子" desc="对方棋子朝向对面（更贴近实物）" value={settings.flipOpponentPieces} onChange={v => update('flipOpponentPieces', v)} />
