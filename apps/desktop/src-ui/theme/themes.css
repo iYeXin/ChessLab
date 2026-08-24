@@ -1,0 +1,84 @@
+/*
+ * Two deliberately DIFFERENT visual languages (values ported from
+ * apps/chessapp/src/theme/games.ts):
+ *
+ * - chess   : European tournament feel — walnut & maple board, cream/ink
+ *             pieces, muted warm parchment chrome. Quiet and precise.
+ * - xiangqi : Chinese paper-and-ink feel — rice-paper background, tan board
+ *             with ink lines and the river, vermilion / ink-black round
+ *             pieces with calligraphic characters.
+ */
+
+.theme-chess {
+  --bg: #efe9de;
+  --surface: #f7f3ea;
+  --surface-alt: #e4dccd;
+  --text-primary: #2a251d;
+  --text-secondary: #8b8271;
+  --accent: #7a5230;
+  --accent-soft: #d9c6ac;
+  --danger: #a33b31;
+  --ok: #3e7c4f;
+
+  /* board */
+  --board-frame: #5d4634;
+  --board-frame-border: #3e2e21;
+  --board-light: #edd6b0;
+  --board-dark: #ae8658;
+  --board-line: #5d4634;
+  --board-coord-text: #8a6f52;
+
+  /* highlights */
+  --hl-selected: rgba(122, 82, 48, 0.45);
+  --hl-target-dot: rgba(62, 44, 28, 0.35);
+  --hl-last-from: rgba(214, 168, 96, 0.4);
+  --hl-last-to: rgba(224, 182, 110, 0.55);
+  --hl-hint: rgba(58, 110, 165, 0.75);
+  --hl-check-king: rgba(163, 59, 49, 0.6);
+
+  /* pieces */
+  --piece-w-fg: #fbf7ee;
+  --piece-w-border: #b49b72;
+  --piece-w-shadow: rgba(43, 32, 18, 0.45);
+  --piece-b-fg: #241f19;
+  --piece-b-border: #0e0c09;
+  --piece-b-shadow: rgba(240, 230, 210, 0.18);
+
+  background-color: var(--bg);
+}
+
+.theme-xiangqi {
+  --bg: #f3ebdb;
+  --surface: #faf5e9;
+  --surface-alt: #e9dfc8;
+  --text-primary: #26211a;
+  --text-secondary: #8a8070;
+  --accent: #a63a2b;
+  --accent-soft: #e4c9af;
+  --danger: #a63a2b;
+  --ok: #41694a;
+
+  --board-frame: #c9a96e;
+  --board-frame-border: #8a6c3e;
+  --board-light: #e7cd97; /* board face — lines are drawn on it */
+  --board-dark: #e7cd97;
+  --board-line: #4a3418;
+  --board-coord-text: #8a6c3e;
+  --board-river-text: #6b4f2a;
+
+  --hl-selected: rgba(166, 58, 43, 0.3);
+  --hl-target-dot: rgba(74, 52, 24, 0.38);
+  --hl-last-from: rgba(196, 148, 74, 0.35);
+  --hl-last-to: rgba(206, 160, 84, 0.5);
+  --hl-hint: rgba(58, 110, 165, 0.7);
+  --hl-check-king: rgba(166, 58, 43, 0.55);
+
+  --piece-w-fg: #f6e7c8; /* red side discs */
+  --piece-w-border: #a63a2b;
+  --piece-w-shadow: rgba(90, 50, 20, 0.35);
+  --piece-b-fg: #f1e8d2; /* black side discs */
+  --piece-b-border: #33302a;
+  --piece-b-shadow: rgba(60, 50, 30, 0.3);
+
+  background-color: var(--bg);
+}

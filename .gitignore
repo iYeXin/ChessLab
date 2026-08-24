@@ -31,3 +31,6 @@ third_party/
 .env
 .vite/
 coverage/
+
+# screenshot iteration artifacts
+.shot*

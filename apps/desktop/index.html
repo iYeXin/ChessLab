@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ChessLab 棋弈</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // TEMP-DIAG: surface runtime errors on-screen (WebView console is hidden).
+      (function () {
+        function show(msg) {
+          var el = document.createElement('pre');
+          el.style.cssText =
+            'position:fixed;top:0;left:0;right:0;background:#300;color:#faa;padding:8px;z-index:99999;white-space:pre-wrap;font:11px monospace;max-height:45%;overflow:auto';
+          el.textContent = msg;
+          document.body.appendChild(el);
+        }
+        window.addEventListener('error', function (e) {
+          show('ERR: ' + e.message + '\n' + (e.error && e.error.stack ? e.error.stack : ''));
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          show('REJECTION: ' + String(e.reason && e.reason.stack ? e.reason.stack : e.reason));
+        });
+      })();
+    </script>
+    <script type="module" src="/src-ui/main.tsx"></script>
+  </body>
+</html>

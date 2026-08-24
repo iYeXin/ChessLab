@@ -1,0 +1,55 @@
+/*
+ * Theme tokens — 1:1 port of apps/chessapp/src/theme (RN StyleSheet values).
+ * Colors are exposed as CSS custom properties on the game root class
+ * (.theme-chess / .theme-xiangqi); src-ui/theme/games.ts references them
+ * via var(--...) so component logic stays framework-agnostic.
+ */
+
+/* Game-agnostic layout tokens (was theme/tokens.ts). */
+:root {
+  --sp-xs: 4px;
+  --sp-s: 8px;
+  --sp-m: 12px;
+  --sp-l: 16px;
+  --sp-xl: 24px;
+  --sp-xxl: 32px;
+
+  --radius-s: 6px;
+  --radius-m: 10px;
+  --radius-l: 14px;
+
+  font-family:
+    'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC', 'Noto Sans SC', system-ui,
+    -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+button {
+  font-family: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+}
+button:active {
+  filter: brightness(0.93);
+}
+button:disabled {
+  cursor: default;
+  filter: none;
+}

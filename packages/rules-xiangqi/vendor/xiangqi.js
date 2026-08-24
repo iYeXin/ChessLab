@@ -1513,3 +1513,10 @@ if (typeof define !== 'undefined')
   define(function () {
     return Xiangqi;
   });
+
+/* ChessLab patch (2026-08, Tauri migration): explicit ESM named export.
+ * Upstream only assigns `exports.Xiangqi` (CJS), which bundlers like Rollup
+ * do NOT interop when this file is consumed as workspace source — the build
+ * warned `"Xiangqi" is not exported` and the symbol would be undefined in
+ * the browser bundle. The guards above keep CJS/AMD consumers working. */
+export { Xiangqi };
