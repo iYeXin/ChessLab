@@ -62,9 +62,9 @@ body,
   overflow: hidden;
 }
 
-/* Safe area: avoid status bar / navigation bar on Android edge-to-edge */
+/* Safe area: side/bottom insets here; the TOP inset is owned by TopBar
+   (surface color must extend under the status bar — see GameChrome). */
 #root {
-  padding-top: var(--safe-top);
   padding-bottom: var(--safe-bottom);
   padding-left: var(--safe-left);
   padding-right: var(--safe-right);

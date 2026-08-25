@@ -19,14 +19,20 @@ export function TopBar(props: {
   return (
     <div
       style={{
-        height: 48,
+        // Extend the surface background under the status bar (safe-area top),
+        // so the system bar area matches the title bar instead of showing the
+        // page background.
+        height: 'calc(48px + var(--safe-top))',
+        padding: '0 var(--sp-s)',
+        paddingTop: 'var(--safe-top)',
+        boxSizing: 'border-box',
         display: 'flex',
         alignItems: 'center',
         flexDirection: 'row',
         gap: 'var(--sp-xs)',
-        padding: '0 var(--sp-s)',
         backgroundColor: props.theme.surface,
         borderBottom: '1px solid rgba(0,0,0,0.08)',
+        flexShrink: 0,
       }}
     >
       <button
