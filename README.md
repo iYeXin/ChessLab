@@ -91,7 +91,7 @@ pnpm build:android      # 仅 Android（需 ANDROID_HOME / NDK）
 | 强度 | 2    | 6    | 10   | 14   | 18   |
 
 - **Stockfish**：原生 `UCI_LimitStrength + UCI_Elo`（1320–3190 线性映射），跨设备棋力一致。
-- **Pikafish**：2026-01-02 版无 `UCI_Elo / Skill Level`，采用宿主弱化——`nodes + depth` 主限（硬件无关，同一节点数同一着法）+ `movetime` 安全帽 + `MultiPV` 分数窗随机选着模拟人类失误，难度近似线性递增。
+- **Pikafish**：2026-01-02 版无 `UCI_Elo / Skill Level`，采用宿主弱化——`nodes + depth` 主限（硬件无关，同一节点数同一着法）+ `movetime` 安全帽 + **近分随机**：仅当多路着法分差落在模糊窗口内（分差不悬殊、不致命，且不会送杀/被杀）时随机选择，否则必走最优着，杜绝"故意走错"的僵硬感，棋力随搜索预算递增。
 
 ### 对局控制
 
@@ -276,7 +276,6 @@ chesslab/
 │   ├── persistence/           # 对局存储接口 + memory/node-file 实现
 │   └── puzzles/               # 残局数据包：types + data（精选 24 + 题库 180）+ 校验
 ├── scripts/                   # 引擎获取 / 冒烟 / 截图 / 构建辅助
-├── docs/                      # 01 技术选型（存档）· 02 Tauri 迁移（权威）· puzzles/ 题库调研
 ├── third_party/               # 官方引擎二进制（fetch:engines 下载）
 ├── build.js                   # 一键构建：Windows NSIS/便携 + Android APK/AAB → dist/
 └── dist/                      # 构建产物输出

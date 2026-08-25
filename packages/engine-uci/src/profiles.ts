@@ -93,7 +93,7 @@ export function pickThinkTimeMs(
 }
 
 // ---------------------------------------------------------------------------
-// Pikafish host-side weakening (1+2)
+// Pikafish host-side weakening
 // ---------------------------------------------------------------------------
 
 /**
@@ -102,22 +102,27 @@ export function pickThinkTimeMs(
  * a 3× CPU gap (desktop vs mid phone) makes the same level play at very
  * different strength, and quiet positions still find the best move in <300ms.
  *
- * Robust policy (hardware-independent primary, bounded wall time):
- *  - 1. `nodes` (and a shallow `depth` guard) as the primary limiter — search
- *     tree size is deterministic across devices;
- *  - 2. `movetimeMs` only as a safety cap so slow devices don't stall;
- *  - 3. `MultiPV` + score-windowed random pick emulates Skill Level / human
- *     blunders, giving linear Elo progression instead of “still best but fast”.
+ * Policy (v2 — "natural variety", no deliberate mistakes):
+ *  - Strength comes from the SEARCH BUDGET: `nodes` + shallow `depth` guard
+ *    (deterministic across devices), with `movetime` only as a slow-device
+ *    safety cap.
+ *  - Randomness applies ONLY among "equally playable" moves: when several
+ *    candidates sit within a small ambiguity window of the best move
+ *    (分差不悬殊), pick one at random — the variety of a human choosing
+ *    between plans, without gifting material.
+ *  - Safety rails (不致命): never randomize away a forced mate; never pick a
+ *    line that gets mated; never pick below the absolute score floor.
+ *    If no alternative qualifies, the best move is played — always.
  */
 export interface PikafishStrengthSpec {
   /** UCI `go` limits (nodes/depth + movetime cap). */
   limits: import('./types').GoLimits;
   /** MultiPV to request (1 = deterministic bestmove). */
   multiPv: number;
-  /** Probability to keep the best PV (remainder → random among the window). */
-  bestMoveProbability: number;
-  /** Max cp loss vs best to still be considered as a blunder candidate. */
-  scoreWindowCp: number;
+  /** Max cp loss vs the best move for it to count as "equally playable". */
+  ambiguityWindowCp: number;
+  /** Absolute cp floor (engine POV) — candidates below are never picked. */
+  absoluteFloorCp: number;
 }
 
 export function pikafishSpecForLevel(
@@ -126,18 +131,22 @@ export function pikafishSpecForLevel(
 ): PikafishStrengthSpec {
   const lvl = clamp(Math.round(level), 1, 20);
 
-  // ---- MultiPV / stochastic policy (mirrors Stockfish Skill Level) ----------
-  // low  → many candidates, low best-move rate, wide window
-  // high → deterministic
+  // ---- MultiPV breadth (how many alternatives we can see) -------------------
+  // Full strength (16+) stays single-PV deterministic.
   let multiPv: number;
   if (lvl <= 4) multiPv = 4;
   else if (lvl <= 8) multiPv = 3;
   else if (lvl <= 14) multiPv = 2;
   else multiPv = 1;
 
-  const bestMoveProbability = multiPv === 1 ? 1 : clamp(0.22 + lvl * 0.042, 0.22, 0.95);
-  // window narrows as level rises: 350 → 150 cp
-  const scoreWindowCp = clamp(Math.round(380 - lvl * 11), 150, 400);
+  // Ambiguity window: how much worse a move may be and still count as
+  // "a different plan" rather than a mistake. Narrows with level.
+  const ambiguityWindowCp =
+    lvl <= 4 ? 90 : lvl <= 8 ? 70 : lvl <= 12 ? 50 : lvl <= 14 ? 35 : 30;
+
+  // Absolute floor: never pick a move this bad even if within the window
+  // (protects against "slightly worse" drifting into "objectively losing").
+  const absoluteFloorCp = -clamp(100 - lvl * 5, 30, 90);
 
   // ---- Search budget (nodes/depth + movetime cap) ---------------------------
   const movetimeCap = pickThinkTimeMs(lvl, clock);
@@ -148,8 +157,8 @@ export function pikafishSpecForLevel(
     return {
       limits: { movetimeMs: movetimeCap },
       multiPv,
-      bestMoveProbability,
-      scoreWindowCp,
+      ambiguityWindowCp,
+      absoluteFloorCp,
     };
   }
 
@@ -167,13 +176,17 @@ export function pikafishSpecForLevel(
   return {
     limits: { nodes, depth, movetimeMs: movetimeWithHeadroom },
     multiPv,
-    bestMoveProbability,
-    scoreWindowCp,
+    ambiguityWindowCp,
+    absoluteFloorCp,
   };
 }
 
 /**
  * Choose the move to actually play from MultiPV infos.
+ *
+ * Randomizes ONLY among near-equal alternatives (loss ≤ ambiguityWindowCp,
+ * not getting mated, not below absoluteFloorCp). A forced mate is always
+ * played; if nothing is genuinely comparable, the engine's bestmove stands.
  * Pure function — `rng` injectable for tests.
  */
 export function choosePikafishMove(
@@ -189,26 +202,31 @@ export function choosePikafishMove(
     .sort((a, b) => (a.multipv ?? 99) - (b.multipv ?? 99));
 
   if (sorted.length === 0) return fallbackBestmove;
-  const best = sorted[0]!;
-  const bestScore = scoreToCp(best);
-  const candidates = sorted.filter(c => {
-    if (c === best) return false;
-    const s = scoreToCp(c);
-    // Mate lines: only keep if best is also mate and mate distance is close
-    if (c.scoreMate !== undefined || best.scoreMate !== undefined) {
-      if (c.scoreMate === undefined || best.scoreMate === undefined) return false;
-      return Math.abs(c.scoreMate - best.scoreMate) <= 2;
-    }
-    return bestScore - s <= spec.scoreWindowCp;
+  const top = sorted[0]!;
+  const topMove = (top.pv[0] as import('@chesslab/rules-core').MoveUci) ?? fallbackBestmove;
+
+  // Forced win on the board — never randomize it away.
+  if (top.scoreMate !== undefined && top.scoreMate > 0) return topMove;
+
+  const topScore = scoreToCp(top);
+
+  // "Equally playable" pool: the best move plus every alternative within the
+  // ambiguity window that is neither mated nor below the absolute floor.
+  const pool = sorted.filter(c => {
+    if (c === top) return true;
+    if (c.scoreMate !== undefined) return false; // any mating line against us / for us is decisive
+    const loss = topScore - scoreToCp(c);
+    if (loss < 0 || loss > spec.ambiguityWindowCp) return false; // 悬殊 → not eligible
+    if (scoreToCp(c) < spec.absoluteFloorCp) return false; // 致命下限
+    return true;
   });
 
-  if (candidates.length === 0) return (best.pv[0] as import('@chesslab/rules-core').MoveUci) ?? fallbackBestmove;
+  // Nothing genuinely comparable → play the best move. No deliberate errors.
+  if (pool.length <= 1) return topMove;
 
-  if (rng() < spec.bestMoveProbability) {
-    return (best.pv[0] as import('@chesslab/rules-core').MoveUci) ?? fallbackBestmove;
-  }
-  const pick = candidates[Math.floor(rng() * candidates.length)]!;
-  return (pick.pv[0] as import('@chesslab/rules-core').MoveUci) ?? fallbackBestmove;
+  // Uniform pick among genuinely comparable moves — natural human variety.
+  const pick = pool[Math.floor(rng() * pool.length)]!;
+  return (pick.pv[0] as import('@chesslab/rules-core').MoveUci) ?? topMove;
 }
 
 function scoreToCp(info: import('./types').EngineInfo): number {

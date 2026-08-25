@@ -144,7 +144,7 @@ export interface Puzzle {
 ## 5. 下一步（不急着集成，但已明确路径）
 
 1. **全量拉取 + 清洗脚本**：`scripts/fetch-puzzles.ts` 批量拉 `shi-qing-ya-qu.json` 等 6 文件 + Lichess CSV（或 HuggingFace parquet），执行 §3.2 校验，输出 `data/puzzles/raw/`。
-2. **引擎唯一解审计**：复用 `engine-uci` 的 `UciEngineDriver` + `pikafishSpecForLevel`/`computeStrengthOptions`，对每题跑 `go depth 20` + MultiPV=3，剔除存在 `scoreWindowCp<150` 第二解的歧义题（mistboard 经验：38/42 clean）。
+2. **引擎唯一解审计**：复用 `engine-uci` 的 `UciEngineDriver` + `computeStrengthOptions`，对每题跑 `go depth 20` + MultiPV=3，剔除存在近分第二解的歧义题（mistboard 经验：38/42 clean）。
 3. **分级与分类**：
    - Xiangqi：按 `basic-checkmate → jianghu → shi-qing-ya-qu` 分 1-5 级；`endgames_all` 按子力差 1-5 映射。
    - Chess：Lichess Rating 1500-1700→Lv2, 1700-1900→Lv3, 1900-2200→Lv4, 古典必修 Lv1。
