@@ -1,0 +1,14 @@
+{
+  "name": "@chesslab/puzzles",
+  "version": "0.3.0",
+  "private": true,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@chesslab/rules-core": "workspace:*",
+    "@chesslab/rules-chess": "workspace:*",
+    "@chesslab/rules-xiangqi": "workspace:*"
+  },
+  "license": "MIT"
+}
+

@@ -150,6 +150,9 @@ importers:
       '@chesslab/persistence':
         specifier: workspace:*
         version: link:../../packages/persistence
+      '@chesslab/puzzles':
+        specifier: workspace:*
+        version: link:../../packages/puzzles
       '@chesslab/rules-chess':
         specifier: workspace:*
         version: link:../../packages/rules-chess
@@ -221,6 +224,18 @@ importers:
       '@chesslab/rules-core':
         specifier: workspace:*
         version: link:../rules-core
+
+  packages/puzzles:
+    dependencies:
+      '@chesslab/rules-chess':
+        specifier: workspace:*
+        version: link:../rules-chess
+      '@chesslab/rules-core':
+        specifier: workspace:*
+        version: link:../rules-core
+      '@chesslab/rules-xiangqi':
+        specifier: workspace:*
+        version: link:../rules-xiangqi
 
   packages/rules-chess:
     dependencies:

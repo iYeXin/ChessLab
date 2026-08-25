@@ -9,9 +9,15 @@
     <div id="root"></div>
     <script>
       // Surface runtime errors on-screen while the WebView console is not
-      // attached (Tauri dev). Disabled in production builds via Vite define.
+      // attached (Tauri dev, vite port 1420). Production builds only log to
+      // console so release builds never show the red debug banner.
       (function () {
+        var isDev = window.location.port === '1420';
         function show(msg) {
+          if (!isDev) {
+            console.error(msg);
+            return;
+          }
           var el = document.createElement('pre');
           el.style.cssText =
             'position:fixed;top:0;left:0;right:0;background:#300;color:#faa;padding:8px;z-index:99999;white-space:pre-wrap;font:11px monospace;max-height:45%;overflow:auto';

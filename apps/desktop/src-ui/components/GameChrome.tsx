@@ -85,10 +85,24 @@ export function StatusBanner(props: {
   };
 
   if (props.bootError) {
-    text = `引擎异常：${props.bootError}`;
+    const raw = props.bootError;
+    // Friendly, user-facing text for known engine boot failures.
+    const friendly = raw.includes('timeout waiting')
+      ? '引擎启动超时，请返回重试'
+      : raw.includes('engine died') || raw.includes('process exited')
+        ? '引擎进程异常退出'
+        : raw.includes('not found')
+          ? '未找到引擎程序'
+          : raw;
+    text = `引擎异常：${friendly}`;
     color = theme.danger;
   } else if (props.result) {
-    text = describeResult(props.result, props.humanSide);
+    if (props.isWatch) {
+      // Spectator: never say 胜利/失败 from a "human side" perspective.
+      text = props.result.winner === null ? '和棋' : `${sideLabel(props.result.winner)}方胜`;
+    } else {
+      text = describeResult(props.result, props.humanSide);
+    }
     color = theme.accent;
   } else if (props.thinkingSide) {
     const thinkSide = sideLabel(props.thinkingSide);
@@ -148,6 +162,22 @@ function describeResult(r: GameResult, humanSide: Side): string {
   const head = r.winner === null ? '和棋' : win ? '胜利 🎉' : '失败';
   const tail = reasonMap[r.reason] ?? r.reason;
   return tail && !tail.includes(win === true ? '取' : '') ? `${head} · ${tail}` : head;
+}
+
+/** Neutral, side-perspective reason text (no 胜利/失败 wording). */
+export function reasonText(r: GameResult): string {
+  const map: Record<string, string> = {
+    checkmate: '绝杀',
+    'no-legal-moves': '困毙',
+    resign: '认输',
+    timeout: '超时',
+    stalemate: '逼和',
+    repetition: '三次重复判和',
+    'fifty-move-rule': '五十回合判和',
+    'insufficient-material': '子力不足判和',
+    agreement: '双方同意和棋',
+  };
+  return map[r.reason] ?? r.reason;
 }
 
 export interface ControlDef {
@@ -275,8 +305,11 @@ export function AssistPanel(props: {
   theme: GameTheme;
   lines: AssistLine[];
   historyLast: HistoryEntry | null;
+  /** When false (assist off / game over), render nothing — never "计算中". */
+  active?: boolean;
 }) {
   const { theme } = props;
+  if (props.active === false) return null;
   const fmtScore = (l: AssistLine): string => {
     if (l.scoreMate !== undefined) return `#${l.scoreMate > 0 ? '' : '-'}${Math.abs(l.scoreMate)}`;
     if (l.scoreCp !== undefined) return `${(l.scoreCp / 100).toFixed(2)}`;
@@ -356,6 +389,7 @@ export function ResultOverlay(props: {
         style={{
           position: 'fixed',
           inset: 0,
+          zIndex: 50, // above board pieces (composited layers on mobile WebView)
           backgroundColor: 'rgba(20,15,8,0.55)',
           display: 'flex',
           alignItems: 'center',

@@ -9,7 +9,8 @@
       "@chesslab/engine-uci": ["./packages/engine-uci/src/index.ts"],
       "@chesslab/engine-process": ["./packages/engine-process/src/index.ts"],
       "@chesslab/game-session": ["./packages/game-session/src/index.ts"],
-      "@chesslab/persistence": ["./packages/persistence/src/index.ts"]
+      "@chesslab/persistence": ["./packages/persistence/src/index.ts"],
+      "@chesslab/puzzles": ["./packages/puzzles/src/index.ts"]
     }
   },
   "include": [

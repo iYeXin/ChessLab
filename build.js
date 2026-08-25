@@ -58,6 +58,39 @@ if (wantWindows) {
     const outPath = join(distDir, outName);
     cpSync(exe.path, outPath);
     log(`Windows → ${outPath} (${(statSync(outPath).size / 1024 / 1024).toFixed(1)} MB)`);
+
+    // Portable (single exe + engines, no installer) — directly runnable
+    const portableSrc = join(root, 'apps/desktop/src-tauri/target/release/chesslab.exe');
+    const enginesSrc = join(root, 'apps/desktop/engines');
+    if (existsSync(portableSrc) && existsSync(enginesSrc)) {
+      const portableDir = join(distDir, `ChessLab-${version}-windows-x64-portable`);
+      mkdirSync(portableDir, { recursive: true });
+      const portableExe = join(portableDir, 'ChessLab.exe');
+      cpSync(portableSrc, portableExe);
+      const portableEngines = join(portableDir, 'engines');
+      mkdirSync(portableEngines, { recursive: true });
+      for (const f of readdirSync(enginesSrc)) {
+        cpSync(join(enginesSrc, f), join(portableEngines, f));
+      }
+      log(`Portable folder → ${portableDir}`);
+
+      // Zip it for single-file distribution
+      try {
+        const zipPath = join(distDir, `ChessLab-${version}-windows-x64-portable.zip`);
+        // Use PowerShell Compress-Archive (available on Windows)
+        execSync(`powershell -Command "Compress-Archive -Path '${portableDir.replace(/'/g, "''")}' -DestinationPath '${zipPath.replace(/'/g, "''")}' -Force"`, { stdio: 'inherit' });
+        log(`Portable ZIP → ${zipPath} (${(statSync(zipPath).size / 1024 / 1024).toFixed(1)} MB)`);
+      } catch (e) {
+        log(`WARN: zip failed: ${e.message}`);
+      }
+
+      // Also copy single exe to dist for users who just want the exe (needs engines folder next to it)
+      const singleOut = join(distDir, `ChessLab-${version}-windows-x64-portable.exe`);
+      cpSync(portableSrc, singleOut);
+      log(`Portable EXE (needs engines/ next to it) → ${singleOut}`);
+    } else {
+      log(`WARN: portable not created — missing ${portableSrc} or ${enginesSrc}`);
+    }
   }
 }
 

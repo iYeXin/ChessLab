@@ -42,8 +42,7 @@ export function toTraditional(
   const sameFilePieces = allSquaresWithSamePieceOnFile(fromFileIdx, pieceType, side);
   let prefix = '';
   if (sameFilePieces.length > 1) {
-    // Sort by rank: for Red, front is larger rank (closer to opponent)? For Red, front is higher rank (towards Black)
-    // For Black, front is smaller rank (towards Red) ? Need to determine.
+    // Sort by rank: for Red, front is larger rank (closer to opponent); for Black, smaller rank is front
     // In xiangqi, "前" is the piece closer to the opponent (more advanced)
     // For Red, higher rank (larger number) is more advanced (towards Black)
     // For Black, lower rank (smaller number) is more advanced (towards Red)
@@ -54,18 +53,37 @@ export function toTraditional(
       return ra - rb; // for Black: front is smaller rank
     });
     const idx = sorted.indexOf(from);
-    if (sameFilePieces.length === 2) {
-      prefix = idx === 0 ? '前' : '后';
-    } else if (sameFilePieces.length === 3) {
-      if (idx === 0) prefix = '前';
-      else if (idx === 1) prefix = '中';
-      else prefix = '后';
+    const count = sameFilePieces.length;
+    if (idx !== -1) {
+      if (count === 2) {
+        prefix = idx === 0 ? '前' : '后';
+      } else if (count === 3) {
+        if (idx === 0) prefix = '前';
+        else if (idx === 1) prefix = '中';
+        else prefix = '后';
+      } else if (count === 4) {
+        // 4 子同列: 前/二/三/后（官方2007规则）
+        const map4 = ['前', '二', '三', '后'];
+        prefix = map4[idx] ?? '';
+      } else if (count >= 5) {
+        // 5 子同列: 前/二/三/四/后
+        const map5 = ['前', '二', '三', '四', '后'];
+        if (count === 5) {
+          prefix = map5[idx] ?? '';
+        } else {
+          // 理论上限 5 兵，>5 时前、后固定，中段按序二三四…
+          if (idx === 0) prefix = '前';
+          else if (idx === count - 1) prefix = '后';
+          else {
+            const mids = ['二', '三', '四', '五', '六', '七'];
+            prefix = mids[idx - 1] ?? String(idx + 1);
+          }
+        }
+      }
     }
-    // For 前/后 case, we don't use file number, we use 前/后 + piece name
-    // e.g., "前兵进一" or "后炮平五"
+    // For 前/中/后 case, we don't use file number, we use 前/中/后 + piece name
+    // e.g., "前兵进一" or "后炮平五" or "二兵平三"
     // The full notation becomes "前兵进一" etc., without file number
-    // But for some pieces, still need file? Actually for 前/后, the notation is "前马进七" etc., without file number
-    // So we should return that
     if (prefix) {
       const act = getAction(fromFileIdx, fromRank, toFileIdx, toRank, side, pieceType);
       let suffix = '';

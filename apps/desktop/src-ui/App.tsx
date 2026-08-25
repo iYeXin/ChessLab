@@ -5,14 +5,19 @@ import { GameScreen } from './screens/GameScreen';
 import { GameSetupScreen } from './screens/GameSetupScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { DiagnosticsScreen } from './screens/DiagnosticsScreen';
+import { PuzzlesScreen } from './screens/PuzzlesScreen';
+import { PuzzleScreen } from './screens/PuzzleScreen';
 import { SettingsProvider } from './state/settings';
+import { getPuzzleById, getPuzzlesByGameType, getLargeByGameType } from '@chesslab/puzzles';
 
 type Route =
   | { name: 'home' }
   | { name: 'setup'; gameType: GameType }
   | { name: 'game'; cfg: StartConfig }
   | { name: 'settings' }
-  | { name: 'diagnostics' };
+  | { name: 'diagnostics' }
+  | { name: 'puzzles' }
+  | { name: 'puzzle'; id: string };
 
 function routeToHash(route: Route): string {
   switch (route.name) {
@@ -26,6 +31,10 @@ function routeToHash(route: Route): string {
       return '#settings';
     case 'diagnostics':
       return '#diagnostics';
+    case 'puzzles':
+      return '#puzzles';
+    case 'puzzle':
+      return `#puzzle:${route.id}`;
   }
 }
 
@@ -36,6 +45,11 @@ function AppInner() {
       const gt = h.split(':')[1] as GameType;
       if (gt === 'chess' || gt === 'xiangqi') return { name: 'setup', gameType: gt };
     }
+    if (h.startsWith('#puzzle:')) {
+      const id = h.slice('#puzzle:'.length);
+      if (getPuzzleById(id)) return { name: 'puzzle', id };
+    }
+    if (h === '#puzzles') return { name: 'puzzles' };
     if (h === '#settings') return { name: 'settings' };
     if (h === '#diagnostics') return { name: 'diagnostics' };
     return { name: 'home' };
@@ -62,7 +76,12 @@ function AppInner() {
         const gt = h.split(':')[1] as GameType;
         if (gt === 'chess' || gt === 'xiangqi') setRoute({ name: 'setup', gameType: gt });
         else setRoute({ name: 'home' });
-      } else if (h === '#settings') setRoute({ name: 'settings' });
+      } else if (h.startsWith('#puzzle:')) {
+        const id = h.slice('#puzzle:'.length);
+        if (getPuzzleById(id)) setRoute({ name: 'puzzle', id });
+        else setRoute({ name: 'puzzles' });
+      } else if (h === '#puzzles') setRoute({ name: 'puzzles' });
+      else if (h === '#settings') setRoute({ name: 'settings' });
       else if (h === '#diagnostics') setRoute({ name: 'diagnostics' });
       else setRoute({ name: 'home' });
     };
@@ -72,7 +91,14 @@ function AppInner() {
 
   switch (route.name) {
     case 'home':
-      return <HomeScreen onPickGameType={gt => navigate({ name: 'setup', gameType: gt })} onSettings={() => navigate({ name: 'settings' })} onDiagnostics={() => navigate({ name: 'diagnostics' })} />;
+      return (
+        <HomeScreen
+          onPickGameType={gt => navigate({ name: 'setup', gameType: gt })}
+          onPuzzles={() => navigate({ name: 'puzzles' })}
+          onSettings={() => navigate({ name: 'settings' })}
+          onDiagnostics={() => navigate({ name: 'diagnostics' })}
+        />
+      );
     case 'setup':
       return <GameSetupScreen gameType={route.gameType} onBack={() => window.history.back()} onStart={cfg => navigate({ name: 'game', cfg })} />;
     case 'game': {
@@ -83,6 +109,32 @@ function AppInner() {
       return <SettingsScreen onBack={() => window.history.back()} />;
     case 'diagnostics':
       return <DiagnosticsScreen onBack={() => window.history.back()} />;
+    case 'puzzles':
+      return <PuzzlesScreen onBack={() => window.history.back()} onPick={p => navigate({ name: 'puzzle', id: p.id })} />;
+    case 'puzzle': {
+      const p = getPuzzleById(route.id);
+      if (!p) return <PuzzlesScreen onBack={() => window.history.back()} onPick={pp => navigate({ name: 'puzzle', id: pp.id })} />;
+      const isLarge = p.id.includes('-large-');
+      const list = isLarge ? getLargeByGameType(p.gameType) : getPuzzlesByGameType(p.gameType);
+      const idx = list.findIndex(x => x.id === p.id);
+      const hasPrev = idx > 0;
+      const hasNext = idx >= 0 && idx < list.length - 1;
+      return (
+        <PuzzleScreen
+          key={p.id}
+          puzzle={p}
+          onBack={() => window.history.back()}
+          onPrev={() => {
+            if (hasPrev) navigate({ name: 'puzzle', id: list[idx - 1]!.id });
+          }}
+          onNext={() => {
+            if (hasNext) navigate({ name: 'puzzle', id: list[idx + 1]!.id });
+          }}
+          hasPrev={hasPrev}
+          hasNext={hasNext}
+        />
+      );
+    }
   }
 }
 

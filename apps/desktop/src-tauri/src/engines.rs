@@ -169,8 +169,42 @@ fn binary_name(profile: &str) -> String {
 
 #[cfg(target_os = "android")]
 fn get_android_native_library_dir() -> Option<std::path::PathBuf> {
-    // On Android, the Rust lib itself lives in nativeLibraryDir, so its parent is the dir we need.
-    // This avoids fragile JNI calls and works for all ABIs.
+    // 1) dladdr: locate this library's own path (robust, no JNI)
+    unsafe {
+        let mut info: libc::Dl_info = std::mem::zeroed();
+        let addr = get_android_native_library_dir as *const () as *const libc::c_void;
+        if libc::dladdr(addr, &mut info) != 0 && !info.dli_fname.is_null() {
+            if let Ok(fname) = std::ffi::CStr::from_ptr(info.dli_fname).to_str() {
+                let p = std::path::PathBuf::from(fname);
+                if let Some(dir) = p.parent() {
+                    // When extractNativeLibs=true, the .so lives directly in .../lib/arm64
+                    if dir.join("libstockfish.so").exists() || dir.join("libpikafish.so").exists() {
+                        return Some(dir.to_path_buf());
+                    }
+                    // When the .so is inside the APK (extractNativeLibs=false fallback),
+                    // dli_fname may be ".../base.apk!/lib/arm64-v8a/libchesslab_lib.so" — try sibling.
+                }
+            }
+        }
+    }
+
+    // 2) /proc/self/maps fallback: find any line containing libchesslab_lib.so
+    if let Ok(maps) = std::fs::read_to_string("/proc/self/maps") {
+        for line in maps.lines() {
+            if line.contains("libchesslab_lib.so") {
+                if let Some(path) = line.rsplit(' ').next() {
+                    let p = std::path::PathBuf::from(path.trim());
+                    if let Some(dir) = p.parent() {
+                        if dir.join("libstockfish.so").exists() || dir.join("libpikafish.so").exists() {
+                            return Some(dir.to_path_buf());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 3) current_exe parent (works on some ROMs where app_process is symlink? keep for completeness)
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             if dir.join("libstockfish.so").exists() || dir.join("libpikafish.so").exists() {
@@ -178,8 +212,13 @@ fn get_android_native_library_dir() -> Option<std::path::PathBuf> {
             }
         }
     }
-    // Fallback: try JNI query
-    let ctx = ndk_context::android_context();
+
+    // 4) JNI fallback — must be panic-safe because ndk_context::android_context()
+    // panics with "android context was not initialized" on JavaBridge threads.
+    let ctx = match std::panic::catch_unwind(|| ndk_context::android_context()) {
+        Ok(c) => c,
+        Err(_) => return None,
+    };
     let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }.ok()?;
     let mut env = vm.attach_current_thread().ok()?;
     let activity = unsafe { jni::objects::JObject::from_raw(ctx.context().cast()) };
@@ -338,7 +377,7 @@ pub fn spawn_engine(app: AppHandle, profile: String) -> Result<u32, String> {
     // We need to keep the `child` handle to wait; move it into the registry
     // and spawn a waiter that locks the registry to wait.
     {
-        let mut map = reg.lock().unwrap();
+        let mut map = reg.lock().unwrap_or_else(|e| e.into_inner());
         map.insert(id, EngineChild { stdin, child });
     }
 
@@ -353,7 +392,7 @@ pub fn spawn_engine(app: AppHandle, profile: String) -> Result<u32, String> {
         // We implement a simple poll: every 200ms, check if the process is gone.
         loop {
             std::thread::sleep(std::time::Duration::from_millis(200));
-            let mut map = reg.lock().unwrap();
+            let mut map = reg.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(entry) = map.get_mut(&id) {
                 match entry.child.try_wait() {
                     Ok(Some(status)) => {
@@ -386,7 +425,7 @@ pub fn spawn_engine(app: AppHandle, profile: String) -> Result<u32, String> {
 #[tauri::command]
 pub fn engine_write(id: u32, line: String) -> Result<(), String> {
     let reg = registry();
-    let mut map = reg.lock().unwrap();
+    let mut map = reg.lock().unwrap_or_else(|e| e.into_inner());
     let entry = map
         .get_mut(&id)
         .ok_or_else(|| format!("engine {} not found", id))?;
@@ -405,7 +444,7 @@ pub fn engine_write(id: u32, line: String) -> Result<(), String> {
 #[tauri::command]
 pub fn engine_stop(id: u32) -> Result<(), String> {
     let reg = registry();
-    let mut map = reg.lock().unwrap();
+    let mut map = reg.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(mut entry) = map.remove(&id) {
         let _ = entry.child.kill();
         let _ = entry.child.wait();

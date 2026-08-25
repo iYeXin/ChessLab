@@ -2,6 +2,7 @@ import React from 'react';
 import { themeClassFor, CHESS_THEME } from '../theme/games';
 import { TopBar } from '../components/GameChrome';
 import { useSettings, type XiangqiFont, type XiangqiTexture, type ChessBoardStyle, type MoveHistoryMode, type XiangqiNotation } from '../state/settings';
+import { playPreviewSound } from '../game/sound';
 
 export function SettingsScreen(props: { onBack(): void }) {
   const theme = CHESS_THEME; // settings screen uses neutral chess chrome
@@ -23,6 +24,18 @@ export function SettingsScreen(props: { onBack(): void }) {
               { value: 'always', label: '始终显示' },
             ]}
             onChange={v => update('moveHistoryMode', v)}
+          />
+        </SettingSection>
+
+        <SettingSection title="音效">
+          <ToggleRow
+            label="落子音效"
+            desc="走子时播放木质落子声"
+            value={settings.soundEnabled}
+            onChange={v => {
+              update('soundEnabled', v);
+              if (v) setTimeout(() => playPreviewSound(), 30);
+            }}
           />
         </SettingSection>
 

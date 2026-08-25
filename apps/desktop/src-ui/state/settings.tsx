@@ -23,6 +23,8 @@ export interface AppSettings {
   xiangqiNotation: XiangqiNotation;
   /** auto watch delay in ms */
   autoDelayMs: number;
+  /** sound: move piece drop */
+  soundEnabled: boolean;
 }
 
 const DEFAULTS: AppSettings = {
@@ -34,6 +36,7 @@ const DEFAULTS: AppSettings = {
   chessBoardStyle: 'polished',
   xiangqiNotation: 'traditional',
   autoDelayMs: 800,
+  soundEnabled: true,
 };
 
 const STORAGE_KEY = 'chesslab.settings.v1';

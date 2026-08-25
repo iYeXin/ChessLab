@@ -11,11 +11,13 @@ import {
   ResultOverlay,
   StatusBanner,
   TopBar,
+  reasonText,
   type ControlDef,
 } from '../components/GameChrome';
 import { useGameSession } from '../state/useGameSession';
 import { makeSessionFactories, shutdownEngines } from '../state/engines';
 import { useSettings } from '../state/settings';
+import { playMoveSound } from '../game/sound';
 import type { StartConfig } from './HomeScreen';
 
 const DIFF_LABEL = ['', '入门', '业余', '进阶', '大师', '特级'] as const;
@@ -50,6 +52,21 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
       void shutdownEngines();
     };
   }, []);
+
+  // 落子音效：历史步数增加时播放
+  const prevHistoryLenRef = useRef(0);
+  const prevGameKeyRef = useRef(gameKey);
+  useEffect(() => {
+    if (prevGameKeyRef.current !== gameKey) {
+      prevGameKeyRef.current = gameKey;
+      prevHistoryLenRef.current = 0;
+      return;
+    }
+    if (state.history.length > prevHistoryLenRef.current) {
+      playMoveSound();
+    }
+    prevHistoryLenRef.current = state.history.length;
+  }, [state.history.length, gameKey]);
 
   // Orientation: for pve use humanSide, for pvp/eve use 'w' (red/white at bottom) but allow flip via settings? Keep simple.
   const orientation: Side = cfg.mode === 'pve' ? cfg.humanSide : 'w';
@@ -155,8 +172,12 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
   );
 
   const onHint = useCallback(async () => {
-    const mv = await actions.hint();
-    if (mv) setHint({ from: mv.from as Square, to: mv.to as Square });
+    try {
+      const mv = await actions.hint();
+      if (mv) setHint({ from: mv.from as Square, to: mv.to as Square });
+    } catch {
+      // hint engine failed (boot timeout / death) — stay silent, button stays usable
+    }
   }, [actions]);
 
   const onUndo = useCallback(() => {
@@ -180,10 +201,13 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
   useEffect(() => {
     if (cfg.mode === 'eve' && capabilities.assist && !actions.assistOn && !state.result) {
       // Use pauseOnOpponentTurn:false so analysis runs even while engines think
-      void actions.enableAssist().then(() => {
-        // override to keep running during engine thinking
-        sessionRef.current?.enableAssist({ multiPv: 3, budgetMs: 1500, pauseOnOpponentTurn: false }).catch(() => {});
-      });
+      void actions
+        .enableAssist()
+        .then(() => {
+          // override to keep running during engine thinking
+          sessionRef.current?.enableAssist({ multiPv: 3, budgetMs: 1500, pauseOnOpponentTurn: false }).catch(() => {});
+        })
+        .catch(() => {}); // engine boot failure must not surface as unhandled rejection
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cfg.mode, capabilities.assist, state.result]);
@@ -204,7 +228,7 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
       return [
         { label: isPaused ? '继续' : '暂停', onPress: onTogglePause, disabled: !!state.result },
         { label: '悔棋', onPress: onUndo, disabled: state.history.length === 0 || !!state.result },
-        { label: actions.assistOn ? '分析·开' : '分析·关', active: actions.assistOn, onPress: () => (actions.assistOn ? actions.disableAssist() : void actions.enableAssist()), disabled: !capabilities.assist },
+        { label: actions.assistOn ? '分析·开' : '分析·关', active: actions.assistOn, onPress: () => (actions.assistOn ? actions.disableAssist() : void actions.enableAssist().catch(() => {})), disabled: !capabilities.assist },
         { label: '认输', tone: 'danger', onPress: () => actions.resign(), disabled: !!state.result },
       ];
     }
@@ -215,7 +239,7 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
         label: actions.assistOn ? '辅助·开' : '辅助·关',
         active: actions.assistOn,
         disabled: !capabilities.assist || cfg.mode === 'pvp',
-        onPress: () => (actions.assistOn || !capabilities.assist ? undefined : void actions.enableAssist()),
+        onPress: () => (actions.assistOn || !capabilities.assist ? undefined : void actions.enableAssist().catch(() => {})),
       },
       { label: '提示', onPress: () => void onHint(), disabled: !!state.result || !capabilities.hints },
       { label: '认输', tone: 'danger', onPress: () => actions.resign(), disabled: !!state.result },
@@ -227,18 +251,28 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
   const lastTo = (lastEntry ? lastEntry.uci.slice(2, 4) : null) as Square | null;
 
   const winnerSide = state.result?.winner ?? null;
+  // Side labels must never mix 红(chess) with 白(xiangqi): pick per game type.
+  const sideWinLabel =
+    winnerSide === null
+      ? '和棋'
+      : cfg.gameType === 'xiangqi'
+        ? winnerSide === 'w'
+          ? '红方胜'
+          : '黑方胜'
+        : winnerSide === 'w'
+          ? '白方胜'
+          : '黑方胜';
   const resultHeadline =
     state.result === null
       ? ''
-      : winnerSide === null
-        ? '和棋'
-        : cfg.mode === 'eve'
-          ? winnerSide === 'w'
-            ? '红/白 胜'
-            : '黑 胜'
+      : cfg.mode === 'pve'
+        ? winnerSide === null
+          ? '和棋'
           : winnerSide === cfg.humanSide
             ? '胜利'
-            : '失败';
+            : '失败'
+        : sideWinLabel;
+  const resultDetail = state.result ? reasonText(state.result) : '';
 
   // Subtitle logic per mode
   const subtitle = (() => {
@@ -338,13 +372,9 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
 
       {/* Assist area: fixed height to avoid jitter in 双机 */}
       <div style={{ height: 38, minHeight: 38, margin: '0 var(--sp-l)', display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
-        {capabilities.isEngineVsEngine ? (
+        {actions.assistOn && !state.result ? (
           <div style={{ flex: 1, minWidth: 0 }}>
-            <AssistPanel theme={theme} lines={state.assistLines} historyLast={lastEntry} />
-          </div>
-        ) : actions.assistOn && capabilities.assist ? (
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <AssistPanel theme={theme} lines={state.assistLines} historyLast={lastEntry} />
+            <AssistPanel theme={theme} lines={state.assistLines} historyLast={lastEntry} active />
           </div>
         ) : (
           <div style={{ flex: 1 }} />
@@ -369,7 +399,7 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
         visible={!!state.result && showResult}
         theme={theme}
         headline={resultHeadline}
-        detail=""
+        detail={resultDetail}
         history={state.history}
         gameType={cfg.gameType}
         xiangqiNotation={settings.xiangqiNotation}

@@ -34,7 +34,10 @@ interface PendingSearch {
   onInfo?: (info: EngineInfo) => void;
 }
 
-const HANDSHAKE_TIMEOUT_MS = 15_000;
+// Generous handshake budget: on Android, first `isready` after `setoption
+// EvalFile` loads a 50MB+ NNUE file and can take well over 15s on slow
+// storage. A dead process fails fast via the exit handler (see below).
+const HANDSHAKE_TIMEOUT_MS = 45_000;
 
 /**
  * One driver instance owns one engine process.
@@ -52,6 +55,7 @@ export class UciEngineDriver {
   private engineName = '';
   private pending: PendingSearch[] = [];
   private waiters: Array<(e: UciEvent) => boolean> = [];
+  private waiterFails: Array<(err: Error) => void> = [];
   private alive = false;
   private deathReason: string | null = null;
 
@@ -95,6 +99,10 @@ export class UciEngineDriver {
       for (const p of this.pending.splice(0)) {
         p.reject(new Error(`engine died during search: ${reason}`));
       }
+      // Fail in-flight handshakes immediately instead of burning the full
+      // timeout when the process is already gone.
+      for (const f of this.waiterFails.splice(0)) f(new Error(`engine died during handshake: ${reason}`));
+      this.waiters = [];
       for (const h of this.deathHandlers) h(reason);
     });
     // Avoid unhandled rejection noise when nobody awaits the exit promise.
@@ -221,8 +229,15 @@ export class UciEngineDriver {
 
       const cleanup = () => {
         this.waiters = this.waiters.filter(w => w !== waiter);
+        this.waiterFails = this.waiterFails.filter(f => f !== fail);
+      };
+      const fail = (err: Error) => {
+        clearTimeout(timer);
+        cleanup();
+        reject(err);
       };
       this.waiters.push(waiter);
+      this.waiterFails.push(fail);
       this.send(command);
     });
   }

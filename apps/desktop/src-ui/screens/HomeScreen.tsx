@@ -25,6 +25,7 @@ const C = {
 
 export function HomeScreen(props: {
   onPickGameType(gt: GameType): void;
+  onPuzzles(): void;
   onSettings(): void;
   onDiagnostics(): void;
 }) {
@@ -91,6 +92,37 @@ export function HomeScreen(props: {
           <br />
           可选人机 / 双人 / 观战（双机步进）
         </div>
+
+        {/* 残局入口 — 与对弈卡同语言的轻量横卡 */}
+        <button
+          type="button"
+          onClick={props.onPuzzles}
+          style={{
+            marginTop: 'var(--sp-xl)',
+            width: '100%',
+            maxWidth: 312,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '10px 14px',
+            borderRadius: 12,
+            backgroundColor: '#FBF7EE',
+            border: '1px solid #D8CDB8',
+            boxShadow: '0 1px 0 rgba(0,0,0,0.04)',
+            textAlign: 'left',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.borderColor = '#C8BBA6')}
+          onMouseLeave={e => (e.currentTarget.style.borderColor = '#D8CDB8')}
+        >
+          <div style={{ width: 42, height: 42, borderRadius: 8, backgroundColor: '#EFE9DE', border: '1px solid #E4DCCD', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <MiniPuzzleArt />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ color: '#2A251D', fontWeight: 800, fontSize: 13, letterSpacing: 0.3 }}>残局</div>
+            <div style={{ color: '#8A8070', fontSize: 11, marginTop: 1 }}>精选与题库 · 循序渐进</div>
+          </div>
+          <span style={{ color: '#B7AD9C', fontSize: 13, paddingLeft: 4 }}>›</span>
+        </button>
 
         <div style={{ display: 'flex', gap: 'var(--sp-m)', marginTop: 'var(--sp-xl)', flexWrap: 'wrap', justifyContent: 'center' }}>
           <button type="button" onClick={props.onSettings} style={{ padding: '8px 16px', borderRadius: 999, border: '1px solid #D8CDB8', background: '#FBF7EE', color: '#5C5343', fontSize: 12 }}>
@@ -225,6 +257,34 @@ function MiniDisc({ color, char }: { color: string; char: string }) {
       }}
     >
       <span style={{ color, fontSize: 12, fontWeight: 700 }}>{char}</span>
+    </div>
+  );
+}
+
+function MiniPuzzleArt() {
+  // 极简棋盘 + 目标点：与 MiniChessArt 同尺度，保持安静
+  const light = '#EDE0C8';
+  const dark = '#C8A88A';
+  const accent = '#7A5230';
+  return (
+    <div style={{ width: 36, height: 36, display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ display: 'flex', gap: 1 }}>
+        <div style={{ width: 10, height: 10, backgroundColor: light, borderRadius: 1 }} />
+        <div style={{ width: 10, height: 10, backgroundColor: dark, borderRadius: 1 }} />
+        <div style={{ width: 10, height: 10, backgroundColor: light, borderRadius: 1 }} />
+      </div>
+      <div style={{ display: 'flex', gap: 1 }}>
+        <div style={{ width: 10, height: 10, backgroundColor: dark, borderRadius: 1 }} />
+        <div style={{ width: 10, height: 10, backgroundColor: accent, borderRadius: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: '#F5EDDD' }} />
+        </div>
+        <div style={{ width: 10, height: 10, backgroundColor: dark, borderRadius: 1 }} />
+      </div>
+      <div style={{ display: 'flex', gap: 1 }}>
+        <div style={{ width: 10, height: 10, backgroundColor: light, borderRadius: 1 }} />
+        <div style={{ width: 10, height: 10, backgroundColor: dark, borderRadius: 1 }} />
+        <div style={{ width: 10, height: 10, backgroundColor: light, borderRadius: 1 }} />
+      </div>
     </div>
   );
 }

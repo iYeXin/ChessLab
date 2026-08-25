@@ -26,6 +26,10 @@ third_party/
 apps/desktop/engines/
 apps/desktop/src-tauri/target/
 *.nnue
+# tauri android: regenerated at build time (frontend dist + bundled resources)
+apps/desktop/src-tauri/gen/android/app/src/main/assets/
+# working screenshots (never committed)
+images/
 # build outputs
 dist/
 
@@ -38,3 +42,5 @@ coverage/
 
 # screenshot iteration artifacts
 .shot*
+# stray duplicate of apps/desktop/public/sounds/luozi.mp3
+/luozi.mp3
