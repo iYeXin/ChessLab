@@ -8,10 +8,4 @@ allowBuilds:
 
 confirmModulesPurge: false
 
-# React Native's codegen resolves @babel/* from arbitrary library directories
-# (a phantom dependency under npm/yarn's flat layout). Hoist it like yarn did.
-publicHoistPattern:
-  - "@babel/*"
-
-patchedDependencies:
-  '@react-native/gradle-plugin@0.84.1': patches/@react-native__gradle-plugin@0.84.1.patch
+# React Native leftovers removed with apps/chessapp purge (v0.3.0).
