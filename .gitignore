@@ -28,8 +28,11 @@ apps/desktop/src-tauri/target/
 *.nnue
 # tauri android: regenerated at build time (frontend dist + bundled resources)
 apps/desktop/src-tauri/gen/android/app/src/main/assets/
-# working screenshots (never committed)
+# working screenshots (raw device captures — never committed; only
+# *-cropped.jpg is published for the README)
 images/
+!images/*-cropped.jpg
+images/*.mp4
 # build outputs
 dist/
 

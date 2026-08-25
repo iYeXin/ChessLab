@@ -39,9 +39,9 @@ export function DiagnosticsScreen(props: { onBack(): void }) {
       if (profileId === 'pikafish') {
         try {
           evalFile = await invoke<string | null>('engine_nnue_path');
-        } catch {}
+        } catch { }
         if (evalFile) {
-          await driver.setOptions({ EvalFile: evalFile }).catch(() => {});
+          await driver.setOptions({ EvalFile: evalFile }).catch(() => { });
         }
       }
       await driver.newGame();
@@ -106,7 +106,6 @@ export function DiagnosticsScreen(props: { onBack(): void }) {
           <div style={{ fontSize: 11, fontWeight: 700, color: '#7A5230', marginBottom: 6 }}>系统</div>
           <div style={{ fontSize: 11, color: '#5C5343' }}>窗口：{windowInfo || `${window.innerWidth}x${window.innerHeight}`}</div>
           <div style={{ fontSize: 11, color: '#5C5343' }}>NNUE 路径：{nnue ?? '未找到（将使用内置）'}</div>
-          <div style={{ fontSize: 10, color: '#8A8070', marginTop: 4 }}>Tauri 2 · WebView2 · Rust engines.rs</div>
         </div>
 
         {Card(stockfish)}

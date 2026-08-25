@@ -2,6 +2,8 @@
 
 > 单机双棋种对弈 · 国际象棋 + 中国象棋 · 离线满血引擎 · 残局训练
 
+<div align="center"><img src="images/home-cropped.jpg" alt="棋弈首页" width="390" style="max-width:100%; border-radius:14px;" /></div>
+
 **棋弈**是一款完全离线的单机对弈应用，内置两套顶级 UCI 引擎：国际象棋 **Stockfish 18**、中国象棋 **Pikafish 2026-01-02（皮卡鱼）**。无联网、无广告、无内购，安装即玩，本体以 **MIT** 开源发行（引擎为 GPLv3 独立进程聚合分发）。支持**人机对弈、同机双人、双机观战、残局训练**四种玩法，适配 **Windows** 与 **Android**。
 
 ---
@@ -114,6 +116,8 @@ pnpm build:android      # 仅 Android（需 ANDROID_HOME / NDK）
 - **胜负判定**：完整规则——将死、困毙（象棋无子可动判负，国象逼和判和）、三次重复、五十回合、子力不足；结果卡显示胜负方（象棋"红方胜"、国象"白方胜"）与原因。
 - **翻转对方棋子**：对方棋子 180° 朝向对面，贴近实物棋盘体验。
 
+<div align="center"><img src="images/success-cropped.jpg" alt="胜负结算" width="360" style="max-width:100%; border-radius:10px;" /></div>
+
 ---
 
 ## 残局训练
@@ -138,6 +142,8 @@ pnpm build:android      # 仅 Android（需 ANDROID_HOME / NDK）
 
 题库支持：**关键词搜索**（标题 / 主题 / ID）、**难度筛选**（1–5 级胶囊）、**随机抽题**、**分页加载**（每次 24 局）。
 
+<div align="center"><img src="images/puzzles-cropped.jpg" alt="残局训练" width="360" style="max-width:100%; border-radius:10px;" /></div>
+
 ### 训练交互
 
 - **一步定胜负**：走出唯一最佳着即解开；走错棋盘震动 + 红色闪烁，1 秒后自动复原重试。
@@ -150,11 +156,13 @@ pnpm build:android      # 仅 Android（需 ANDROID_HOME / NDK）
 ## 棋盘与视觉
 
 ### 国际象棋
+<div align="center"><img src="images/chess-cropped.jpg" alt="国际象棋对局" width="360" style="max-width:100%; border-radius:10px;" /></div>
 
 - **经典 / 精致** 两档：精致档为胡桃木斜向渐变边框、内阴影、淡金坐标、棋子微立体阴影与字形渲染优化。
 - 字形棋子（Unicode 实心字形），跨平台渲染一致。
 
 ### 中国象棋
+<div align="center"><img src="images/xiangqi-cropped.jpg" alt="中国象棋对局" width="360" style="max-width:100%; border-radius:10px;" /></div>
 
 - **平板 / 仿真** 两档：仿真为细腻木纹底 + 棋子结构化立体（顶部高光、边缘厚度、投影）；棋盘本体保持平板不做渐变。
 - 墨线棋盘：河界"楚河 漢界"典雅衬线、九宫斜线、双线边框，棋子落于交叉点。
@@ -169,6 +177,8 @@ pnpm build:android      # 仅 Android（需 ANDROID_HOME / NDK）
 ---
 
 ## 设置项
+
+<div align="center"><img src="images/settings-cropped.jpg" alt="设置页" width="360" style="max-width:100%; border-radius:10px;" /></div>
 
 首页"设置"进入，分四组，全部自动持久化（`localStorage: chesslab.settings.v1`）：
 
