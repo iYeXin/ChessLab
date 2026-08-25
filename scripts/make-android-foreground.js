@@ -59,8 +59,13 @@ const RING_RATIO = 0.38;
     }
   }
   if (maxX < 0) throw new Error('no red ring found in rendered SVG');
-  // +0.5 to keep the anti-aliased outline fully inside the viewBox
-  const vb = `${minX - 0.5} ${minY - 0.5} ${maxX - minX + 2} ${maxY - minY + 2}`;
+  const ringSize = Math.max(maxX - minX + 2, maxY - minY + 2); // ring outer px in source space
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  // ViewBox = ring center, zoomed OUT by 1/RING_RATIO so the ring occupies
+  // exactly RING_RATIO of the rendered canvas (the rest stays transparent).
+  const content = ringSize / RING_RATIO;
+  const vb = `${cx - content / 2} ${cy - content / 2} ${content} ${content}`;
 
   // ---- Per-density foreground: ring path only, transparent background ------
   for (const [d, S] of Object.entries(DENSITIES)) {
