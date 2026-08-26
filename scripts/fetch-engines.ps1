@@ -47,8 +47,11 @@ Expand-Archive -Force -Path $sfZip -DestinationPath $sfDir
 $sfExe = Get-ChildItem $sfDir -Recurse -Filter "stockfish*.exe" | Select-Object -First 1
 if (-not $sfExe) { throw "no stockfish exe inside downloaded zip" }
 Copy-Item $sfExe.FullName (Join-Path $sfDir "stockfish.exe") -Force
-if (Get-Command Unblock-File -ErrorAction SilentlyContinue) {
-  Unblock-File (Join-Path $sfDir "stockfish.exe") -ErrorAction SilentlyContinue
+# Unblock-File is Windows-only; guard by OS check to avoid "does not support Linux" on Ubuntu runners
+$onWindows = $IsWindows
+if ($null -eq $onWindows) { $onWindows = $env:OS -eq 'Windows_NT' }
+if ($onWindows) {
+  try { Unblock-File (Join-Path $sfDir "stockfish.exe") -ErrorAction SilentlyContinue } catch {}
 }
 
 # Android arm64 build (for jniLibs sync); prefer the faster dotprod variant.
