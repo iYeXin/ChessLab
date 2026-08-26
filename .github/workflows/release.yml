@@ -181,6 +181,9 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
           echo "NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
 
+      - name: Install 7zip (for Pikafish .7z)
+        run: sudo apt-get update && sudo apt-get install -y p7zip-full
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 

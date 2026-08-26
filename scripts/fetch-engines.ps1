@@ -86,14 +86,31 @@ $pfBase = Join-Path $Dest "windows-x64\pikafish"
 $pfAndroidDir = Join-Path $Dest "android-arm64"
 New-Item -ItemType Directory -Force -Path $pfBase, $pfAndroidDir | Out-Null
 
-# bsdtar reads .7z fine on Windows 10+.
-tar -xf $pf7z -C $pfBase
+# .7z needs 7z/bsdtar (Windows tar = bsdtar, Ubuntu tar = GNU tar which can't read 7z)
+$extracted = $false
+$sevenZip = Get-Command 7z -ErrorAction SilentlyContinue
+if ($sevenZip) {
+  try {
+    & 7z x $pf7z "-o$pfBase" -y | Out-Null
+    if ($LASTEXITCODE -eq 0) { $extracted = $true }
+  } catch {}
+}
+if (-not $extracted) {
+  $bsdTar = Get-Command bsdtar -ErrorAction SilentlyContinue
+  if ($bsdTar) {
+    try { & bsdtar -xf $pf7z -C $pfBase; if ($LASTEXITCODE -eq 0) { $extracted = $true } } catch {}
+  }
+}
+if (-not $extracted) {
+  try { tar -xf $pf7z -C $pfBase; if ($LASTEXITCODE -eq 0) { $extracted = $true } } catch {}
+}
+if (-not $extracted) { throw "failed to extract $pf7z (need 7z or bsdtar)" }
 $allExtracted = Get-ChildItem $pfBase -Recurse
 
 $pfNnue = $allExtracted | Where-Object { $_.Extension -eq ".nnue" } | Select-Object -First 1
 # Archive layout: Windows\pikafish-avx2.exe, Android\pikafish-armv8[-dotprod], pikafish.nnue
 $pfWin = $allExtracted |
-    Where-Object { $_.FullName -match "\\Windows\\pikafish-avx2\.exe$" } |
+    Where-Object { $_.FullName -match "[/\\]Windows[/\\]pikafish-avx2\.exe$" } |
     Select-Object -First 1
 if (-not $pfWin) {
     $pfWin = $allExtracted | Where-Object { $_.Name -like "pikafish*.exe" } | Select-Object -First 1
@@ -109,10 +126,10 @@ if ($pfNnue) {
 
 # Android binaries live in the same archive; prefer dotprod when present.
 $pfAnd = $allExtracted |
-    Where-Object { -not $_.PSIsContainer -and $_.FullName -match "\\Android\\pikafish-armv8-dotprod$" } | Select-Object -First 1
+    Where-Object { -not $_.PSIsContainer -and $_.FullName -match "[/\\]Android[/\\]pikafish-armv8-dotprod$" } | Select-Object -First 1
 if (-not $pfAnd) {
     $pfAnd = $allExtracted |
-        Where-Object { -not $_.PSIsContainer -and $_.FullName -match "\\Android\\pikafish-armv8$" } | Select-Object -First 1
+        Where-Object { -not $_.PSIsContainer -and $_.FullName -match "[/\\]Android[/\\]pikafish-armv8$" } | Select-Object -First 1
 }
 if ($pfAnd) {
   $pfAndDest = Join-Path $pfAndroidDir "libpikafish.so"
