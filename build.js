@@ -42,6 +42,41 @@ function findLatest(dir, pattern) {
   return best;
 }
 
+// --- ensure desktop engines are staged for Tauri resources (../engines) ---
+function ensureDesktopEngines() {
+  const dstDir = join(root, 'apps/desktop/engines');
+  const candidates = [
+    [join(root, 'third_party/engines/windows-x64/stockfish/stockfish.exe'), join(dstDir, 'stockfish.exe')],
+    [join(root, 'third_party/engines/windows-x64/pikafish/pikafish-avx2.exe'), join(dstDir, 'pikafish.exe')],
+    [join(root, 'third_party/engines/windows-x64/pikafish/pikafish.nnue'), join(dstDir, 'pikafish.nnue')],
+  ];
+  let synced = 0;
+  for (const [src, dst] of candidates) {
+    if (existsSync(src)) {
+      mkdirSync(dstDir, { recursive: true });
+      cpSync(src, dst);
+      synced++;
+    }
+  }
+  // fallback: any pikafish exe if avx2 missing
+  if (!existsSync(join(dstDir, 'pikafish.exe'))) {
+    const pfDir = join(root, 'third_party/engines/windows-x64/pikafish');
+    if (existsSync(pfDir)) {
+      const alt = readdirSync(pfDir).find(f => f.toLowerCase().endsWith('.exe'));
+      if (alt) {
+        mkdirSync(dstDir, { recursive: true });
+        cpSync(join(pfDir, alt), join(dstDir, 'pikafish.exe'));
+        synced++;
+      }
+    }
+  }
+  if (synced > 0) log(`Synced ${synced} engine file(s) to ${dstDir}`);
+  else if (wantWindows && process.platform === 'win32' && !existsSync(dstDir)) {
+    log(`WARN: desktop engines missing at ${dstDir} — run pnpm fetch:engines first`);
+  }
+}
+ensureDesktopEngines();
+
 // --- frontend is built by tauri beforeBuildCommand, no need to prebuild ---
 
 if (wantWindows) {
