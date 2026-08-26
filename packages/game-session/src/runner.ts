@@ -24,6 +24,12 @@ export interface EngineTurnRunner {
     level: number;
     clock?: { remainingMs?: number; incrementMs?: number };
     onInfo?: (info: EngineInfo) => void;
+    /**
+     * Optional veto for randomized MultiPV alternatives (Pikafish host-side
+     * weakening only). The engine's own bestmove is never vetoed. Used to
+     * keep the variety randomizer out of repetition loops.
+     */
+    guardCandidate?: (mv: MoveUci) => boolean;
   }): Promise<{ bestmove: MoveUci | null }>;
   /** Invalidate any in-flight request and stop the underlying search. */
   cancel(): void;
@@ -51,7 +57,7 @@ export function createUciRunner(
       return driver.id;
     },
 
-    async requestMove({ fen, moves, level, clock, onInfo }) {
+    async requestMove({ fen, moves, level, clock, onInfo, guardCandidate }) {
       const gen = currentGen + 1;
 
       const isPikafish = driver.id === 'pikafish';
@@ -94,7 +100,7 @@ export function createUciRunner(
             r => {
               if (gen !== currentGen) return;
               if (infos && spec && r.bestmove) {
-                const chosen = choosePikafishMove(infos, r.bestmove, spec);
+                const chosen = choosePikafishMove(infos, r.bestmove, spec, Math.random, guardCandidate);
                 resolve({ bestmove: chosen });
               } else {
                 resolve(r);

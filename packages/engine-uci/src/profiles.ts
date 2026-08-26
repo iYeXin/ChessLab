@@ -1,3 +1,4 @@
+import type { MoveUci } from '@chesslab/rules-core';
 import type { EngineId, EngineProfile, UciOptionValue } from './types';
 
 /**
@@ -187,13 +188,18 @@ export function pikafishSpecForLevel(
  * Randomizes ONLY among near-equal alternatives (loss ≤ ambiguityWindowCp,
  * not getting mated, not below absoluteFloorCp). A forced mate is always
  * played; if nothing is genuinely comparable, the engine's bestmove stands.
- * Pure function — `rng` injectable for tests.
+ *
+ * `allowCandidate` (optional) vetoes RANDOMIZED alternatives only — the
+ * engine's own bestmove is exempt and always playable. The session layer uses
+ * this to keep the variety randomizer from stepping into repetition loops the
+ * bestmove itself avoided. Pure function — `rng` injectable for tests.
  */
 export function choosePikafishMove(
   infos: ReadonlyMap<number, import('./types').EngineInfo>,
   fallbackBestmove: import('@chesslab/rules-core').MoveUci | null,
   spec: PikafishStrengthSpec,
   rng: () => number = Math.random,
+  allowCandidate?: (mv: MoveUci) => boolean,
 ): import('@chesslab/rules-core').MoveUci | null {
   if (spec.multiPv <= 1 || infos.size <= 1) return fallbackBestmove;
 
@@ -218,6 +224,8 @@ export function choosePikafishMove(
     const loss = topScore - scoreToCp(c);
     if (loss < 0 || loss > spec.ambiguityWindowCp) return false; // 悬殊 → not eligible
     if (scoreToCp(c) < spec.absoluteFloorCp) return false; // 致命下限
+    const mv = c.pv[0] as import('@chesslab/rules-core').MoveUci;
+    if (allowCandidate && !allowCandidate(mv)) return false; // vetoed (e.g. repeats a position)
     return true;
   });
 

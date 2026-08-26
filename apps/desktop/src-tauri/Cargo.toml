@@ -1,6 +1,6 @@
 [package]
 name = "chesslab"
-version = "0.3.2"
+version = "0.3.3"
 description = "ChessLab — chess & xiangqi (Stockfish / Pikafish)"
 license = "MIT"
 edition = "2021"

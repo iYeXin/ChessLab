@@ -42,6 +42,8 @@ export type GameEndReason =
   | 'no-legal-moves' // xiangqi 困毙 — stalemated side LOSES (unlike chess)
   | 'resign'
   | 'timeout'
+  /** xiangqi 长将 — perpetual checker must vary; on third repetition they LOSE. */
+  | 'perpetual-check' // decisive (reserved: 'perpetual-chase' when 长捉 lands)
   // draws
   | 'stalemate' // chess pat only
   | 'repetition'
@@ -110,6 +112,17 @@ export interface RulesAdapter {
   history(): readonly HistoryEntry[];
 
   clone(): RulesAdapter;
+
+  /**
+   * Repetition probe (optional; implemented by adapters that track position
+   * history): how many times the position AFTER playing `uci` would have
+   * occurred, counting this move. 1 = first occurrence, 2 = would repeat a
+   * previously seen position, etc. Returns 0 when `uci` is illegal.
+   *
+   * Used by the session layer to keep randomized engine alternatives from
+   * drifting into repetition loops.
+   */
+  occurrencesAfter?(uci: MoveUci): number;
 }
 
 export const other = (side: Side): Side => (side === 'w' ? 'b' : 'w');

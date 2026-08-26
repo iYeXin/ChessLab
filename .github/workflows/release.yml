@@ -1,0 +1,280 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 0.3.3, without leading v). Leave empty to use tag or package.json"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PNPM_VERSION: "11.21.0"
+  NODE_VERSION: "22"
+  RUST_TOOLCHAIN: "stable"
+  JAVA_VERSION: "21"
+
+jobs:
+  # ──────────────────────────────────────────────────────────
+  # 0) Sanity: version must be consistent
+  # ──────────────────────────────────────────────────────────
+  sanity:
+    name: sanity
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.version }}" ]]; then
+            VER="${{ inputs.version }}"
+            VER="${VER#v}"
+            TAG="v${VER}"
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+            VER="${TAG#v}"
+          else
+            VER="$(node -p "require('./package.json').version")"
+            TAG="v${VER}"
+          fi
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Resolved ${TAG} (${VER})"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Check version consistency
+        run: node scripts/bump-version.mjs --check
+
+      - name: Typecheck & tests
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm typecheck
+          pnpm test
+
+  # ──────────────────────────────────────────────────────────
+  # 1) Windows (NSIS + portable)
+  # ──────────────────────────────────────────────────────────
+  build-windows:
+    name: build-windows
+    needs: sanity
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Fetch engines
+        shell: pwsh
+        run: pnpm fetch:engines
+
+      - name: Build Windows
+        shell: pwsh
+        run: node build.js --windows
+
+      - name: Verify artifacts
+        shell: pwsh
+        run: |
+          Get-ChildItem dist -File | Format-Table Name, Length
+          if (-not (Test-Path "dist/ChessLab-${{ needs.sanity.outputs.version }}-windows-x64-setup.exe")) { throw "setup.exe missing" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-windows
+          path: |
+            dist/ChessLab-*-windows-*
+            !dist/ChessLab-*-windows-x64-portable
+          if-no-files-found: error
+          retention-days: 7
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-windows-portable-dir
+          path: dist/ChessLab-*-windows-x64-portable
+          if-no-files-found: warn
+          retention-days: 7
+
+  # ──────────────────────────────────────────────────────────
+  # 2) Android (APK + AAB)
+  # ──────────────────────────────────────────────────────────
+  build-android:
+    name: build-android
+    needs: sanity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK & build-tools
+        run: |
+          sdkmanager --install "ndk;27.0.12077973" "build-tools;35.0.0" "platforms;android-34"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Fetch engines
+        run: pnpm fetch:engines
+
+      - name: Build Android
+        run: node build.js --android
+
+      - name: Verify artifacts
+        run: |
+          ls -lh dist/
+          test -f "dist/ChessLab-${{ needs.sanity.outputs.version }}-android-universal.apk" || (echo "apk missing" && exit 1)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-android
+          path: |
+            dist/ChessLab-*-android-*
+          if-no-files-found: error
+          retention-days: 7
+
+  # ──────────────────────────────────────────────────────────
+  # 3) Publish GitHub Release
+  # ──────────────────────────────────────────────────────────
+  release:
+    name: release
+    needs: [sanity, build-windows, build-android]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist-artifacts
+          merge-multiple: true
+
+      - name: Stage dist
+        run: |
+          mkdir -p dist
+          cp -r dist-artifacts/* dist/ 2>/dev/null || true
+          # flatten nested portable dir if present
+          if [ -d "dist-artifacts/dist-windows-portable-dir" ]; then
+            cp -r dist-artifacts/dist-windows-portable-dir/* dist/ 2>/dev/null || true
+          fi
+          ls -R dist | head -n 200
+          ls -lh dist/
+
+      - name: Extract changelog for this version
+        id: changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+          VER="${{ needs.sanity.outputs.version }}"
+          # Extract [VER] section from CHANGELOG.md (including header, until next ## [)
+          awk -v ver="## \\[${VER}\\]" '
+            $0 ~ ver {flag=1; print; next}
+            flag && /^## \[/ {exit}
+            flag {print}
+          ' CHANGELOG.md > /tmp/notes.md || true
+          if [ ! -s /tmp/notes.md ]; then
+            echo "No changelog entry for ${VER}, using tag message" > /tmp/notes.md
+            git tag -l --format="%(contents)" "${{ needs.sanity.outputs.tag }}" >> /tmp/notes.md 2>/dev/null || true
+          fi
+          # Also append full changelog link
+          echo "" >> /tmp/notes.md
+          echo "---" >> /tmp/notes.md
+          echo "Full changelog: https://github.com/${{ github.repository }}/compare/v${VER}...HEAD" >> /tmp/notes.md || true
+          cat /tmp/notes.md
+          # multiline output
+          {
+            echo "notes<<EOF"
+            cat /tmp/notes.md
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.sanity.outputs.tag }}
+          name: ChessLab ${{ needs.sanity.outputs.tag }}
+          body: ${{ steps.changelog.outputs.notes }}
+          draft: false
+          prerelease: false
+          files: |
+            dist/ChessLab-*-windows-x64-setup.exe
+            dist/ChessLab-*-windows-x64-portable.zip
+            dist/ChessLab-*-windows-x64-portable.exe
+            dist/ChessLab-*-android-universal.apk
+            dist/ChessLab-*-android-universal.aab
+          fail_on_unmatched_files: false
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

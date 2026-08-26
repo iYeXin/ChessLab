@@ -82,6 +82,8 @@ export class GameSession {
   private hintRunner: EngineTurnRunner | null = null;
   private autoPaused = false;
   private autoDelayMs: number;
+  /** Position the game started from — base for engine `position ... moves ...`. */
+  private startFen = '';
 
   constructor(private opts: SessionOptions) {
     this.autoDelayMs = opts.autoDelayMs ?? 0;
@@ -122,6 +124,7 @@ export class GameSession {
   async start(): Promise<void> {
     if (this.started) throw new Error('session already started');
     this.started = true;
+    this.startFen = this.opts.rules.fen();
     await this.ensureRunners();
     this.emit({ kind: 'started', fen: this.opts.rules.fen() });
 
@@ -227,9 +230,10 @@ export class GameSession {
     const profileId = this.opts.rules.gameType === 'chess' ? 'stockfish' : 'pikafish';
     this.hintRunner ??= await factory({ profileId, strengthLevel: 20 });
     try {
+      const pos = this.engineSearchPosition();
       const { bestmove } = await this.hintRunner.requestMove({
-        fen: this.rules.fen(),
-        moves: [],
+        fen: pos.fen,
+        moves: pos.moves,
         level: 20,
         clock: { remainingMs: movetimeMs },
       });
@@ -280,7 +284,7 @@ export class GameSession {
     }
     this.assistOn = true;
     if (!this.suspended) {
-      this.assist.begin(this.rules.fen(), this.assistOpts);
+      this.beginAssist();
     }
   }
 
@@ -324,7 +328,7 @@ export class GameSession {
       !this.over &&
       this.currentPlayerConfig()?.kind === 'human'
     ) {
-      this.assist.begin(this.rules.fen(), this.assistOpts);
+      this.beginAssist();
     }
     // A cancelled opponent search must be re-issued or the game stalls (autoPlay only).
     const cfg = this.currentPlayerConfig();
@@ -359,6 +363,46 @@ export class GameSession {
 
   // ---- internals -------------------------------------------------------------
 
+  /**
+   * Engine search position: the game's STARTING fen plus the full move list.
+   *
+   * Sending only the bare current-position FEN (the old behavior) leaves the
+   * engine repetition-blind — it cannot know a position already occurred and
+   * will happily walk into 长将/三次重复. With history attached, engines that
+   * score repetitions (and Pikafish's built-in Asian-rule adjudication) see
+   * the true game state. History is cheap for UCI engines to replay.
+   */
+  private engineSearchPosition(): { fen: string; moves: MoveUci[] } {
+    const base = this.startFen || this.rules.fen();
+    const moves = this.rules.history().map(h => h.uci);
+    return { fen: base, moves };
+  }
+
+  /**
+   * Veto predicate handed to randomized Pikafish move selection: an
+   * alternative must not step into a previously-seen position (count ≥ 2
+   * including itself). The engine's own bestmove stays exempt — if it chooses
+   * a repetition, client-side adjudication applies the official outcome.
+   */
+  private candidateGuard(): ((mv: MoveUci) => boolean) | undefined {
+    const probe = this.opts.rules.occurrencesAfter?.bind(this.opts.rules);
+    if (!probe) return undefined;
+    return mv => {
+      try {
+        return (probe(mv) ?? 0) < 2;
+      } catch {
+        return true; // probe failure must never veto a legal candidate
+      }
+    };
+  }
+
+  /** Restart assist analysis at the live position (with full move history). */
+  private beginAssist(): void {
+    if (!this.assist) return;
+    const pos = this.engineSearchPosition();
+    this.assist.begin(pos.fen, { ...this.assistOpts, moves: pos.moves });
+  }
+
   private emit(e: SessionEvent): void {
     for (const fn of [...this.listeners]) fn(e);
 
@@ -368,7 +412,7 @@ export class GameSession {
     //   assist engine never doubles up with the opponent's own search.
     if (!this.assistOn || !this.assist || this.suspended) return;
     if (e.kind === 'started') {
-      this.assist.begin(this.rules.fen(), this.assistOpts);
+      this.beginAssist();
       return;
     }
     if (
@@ -376,7 +420,7 @@ export class GameSession {
       (!this.assistOpts.pauseOnOpponentTurn ||
         this.currentPlayerConfig()?.kind === 'human')
     ) {
-      this.assist.begin(this.rules.fen(), this.assistOpts);
+      this.beginAssist();
       return;
     }
     if (e.kind === 'turn' && this.assistOpts.pauseOnOpponentTurn) {
@@ -433,8 +477,7 @@ export class GameSession {
 
     try {
       const { bestmove } = await runner.requestMove({
-        fen: this.rules.fen(),
-        moves: [],
+        ...this.engineSearchPosition(),
         level: cfg.strengthLevel,
         clock:
           this.clock ?
@@ -447,6 +490,7 @@ export class GameSession {
             })()
           : undefined,
         onInfo: info => this.emit({ kind: 'engineInfo', side, info }),
+        guardCandidate: this.candidateGuard(),
       });
 
       if (this.disposed || this.over || this.engineThinking !== side) return; // stale

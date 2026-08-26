@@ -37,10 +37,14 @@ export interface AssistEngine {
    *                        cycle via stop()/suspend)
    * - budgetMs         -> finite `go movetime` burst, engine stops itself
    * - maxDepth         -> finite `go depth`
+   *
+   * `moves` carries the plies that led from `fen` to the live position —
+   * without it the engine is repetition-blind (it would score a position
+   * that already occurred twice as if it were fresh).
    */
   begin(
     fen: string,
-    opts?: { multiPv?: number; budgetMs?: number; maxDepth?: number },
+    opts?: { multiPv?: number; budgetMs?: number; maxDepth?: number; moves?: readonly MoveUci[] },
   ): void;
   /** Halt the current search and clear lines. */
   stop(): void;
@@ -62,7 +66,7 @@ export function createUciAssistEngine(driver: UciEngineDriver): AssistEngine {
   };
 
   return {
-    async begin(fen: string, opts?: { multiPv?: number; budgetMs?: number; maxDepth?: number }) {
+    async begin(fen, opts) {
       const myGen = ++gen;
       latest.clear();
       publish();
@@ -83,7 +87,7 @@ export function createUciAssistEngine(driver: UciEngineDriver): AssistEngine {
       // Settles on bestmove (finite) or stop() (infinite). Stale results are
       // dropped through generation checks.
       void driver
-        .search({ fen }, limits, (info: EngineInfo) => {
+        .search({ fen, moves: opts?.moves }, limits, (info: EngineInfo) => {
           if (myGen !== gen || info.multipv === undefined) return;
           const prev = latest.get(info.multipv);
           if (prev && (info.depth ?? 0) < (prev.depth ?? 0)) return;

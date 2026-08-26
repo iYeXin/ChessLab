@@ -5,12 +5,14 @@ import {
   type GameResult,
   type HistoryEntry,
   type LegalMove,
+  type MoveUci,
   type Piece,
   type PieceType,
   type RulesAdapter,
   type Side,
   type Square,
 } from '@chesslab/rules-core';
+import { adjudicateRepetition, positionKey } from './adjudicate';
 
 const Xiangqi = vendor.Xiangqi;
 
@@ -28,20 +30,31 @@ const Xiangqi = vendor.Xiangqi;
  *   through to the engine unmodified.
  *
  * Known limitations inherited from upstream (fine for MVP):
- * - Perpetual-check / perpetual-chase (长将/长捉) adjudication is NOT enforced
- *   client-side. Repetition draws are detected as simple threefold repetition.
+ * - Perpetual-chase (长捉) adjudication is NOT enforced client-side; a third
+ *   repetition involving only chase/idle plies stays a draw. Perpetual CHECK
+ *   (长将) IS adjudicated as a loss — see src/adjudicate.ts.
  */
 export class XiangqiRules implements RulesAdapter {
   readonly gameType = 'xiangqi' as const;
   private g: vendor.XiangqiGame;
 
+  /**
+   * Position history for repetition tracking. `posFens[0]` is the position
+   * before any ply; `posFens[i]` is the (public-dialect) FEN after ply `i`.
+   * `posCounts` incrementally counts occurrences per repetition key.
+   */
+  private posFens: string[] = [];
+  private posCounts = new Map<string, number>();
+
   constructor(fen?: string) {
     this.g = new Xiangqi(fen ? normalizeFenIn(fen) : undefined);
+    this.retrack();
   }
 
   reset(fen?: string): void {
     this.g.reset();
     if (fen) this.g.load(normalizeFenIn(fen));
+    this.retrack();
   }
 
   fen(): string {
@@ -64,11 +77,15 @@ export class XiangqiRules implements RulesAdapter {
   move(uci: string): LegalMove | null {
     if (!/^[a-i][0-9][a-i][0-9]$/.test(uci)) return null;
     const m = this.g.move(uci);
-    return m ? toLegalMove(m) : null;
+    if (!m) return null;
+    this.trackPosition();
+    return toLegalMove(m);
   }
 
   undo(): boolean {
-    return this.g.undo() !== null;
+    const ok = this.g.undo() !== null;
+    if (ok) this.untrackPosition();
+    return ok;
   }
 
   isCheck(): boolean {
@@ -92,12 +109,31 @@ export class XiangqiRules implements RulesAdapter {
       // 困毙: unlike chess, a stalemated side LOSES.
       return { winner: other(this.turn()), reason: 'no-legal-moves' };
     }
-    if (this.g.in_threefold_repetition()) return { winner: null, reason: 'repetition' };
+    // Third occurrence of the current position → official-rules adjudication:
+    // a perpetual checker (长将) LOSES instead of drawing the game. Other
+    // repetition combinations remain draws (see src/adjudicate.ts for scope).
+    if ((this.posCounts.get(positionKey(this.fen())) ?? 0) >= 3) {
+      const verdict = adjudicateRepetition({
+        positions: this.posFens,
+        moves: this.history().map(h => h.uci),
+        createReplay: fen => new XiangqiRules(fen),
+      });
+      if (verdict) return { winner: verdict.winner, reason: verdict.reason };
+      return { winner: null, reason: 'repetition' };
+    }
     if (this.g.insufficient_material()) {
       return { winner: null, reason: 'insufficient-material' };
     }
     if (this.g.in_draw()) return { winner: null, reason: 'agreement' };
     return null;
+  }
+
+  /** See RulesAdapter.occurrencesAfter — powers anti-repetition guardrails. */
+  occurrencesAfter(uci: MoveUci): number {
+    if (!/^[a-i][0-9][a-i][0-9]$/.test(uci)) return 0;
+    const probe = new XiangqiRules(this.fen());
+    if (!probe.move(uci)) return 0;
+    return (this.posCounts.get(positionKey(probe.fen())) ?? 0) + 1;
   }
 
   history(): readonly HistoryEntry[] {
@@ -106,12 +142,38 @@ export class XiangqiRules implements RulesAdapter {
   }
 
   clone(): RulesAdapter {
+    // Note: cloning by FEN drops repetition history — same trade-off as the
+    // chess adapter; live games always run on the original instance.
     return new XiangqiRules(this.fen());
   }
 
   /** Direct passthrough for tests / debugging. */
   perft(depth: number): number {
     return this.g.perft(depth);
+  }
+
+  // ---- repetition tracking --------------------------------------------------
+
+  private retrack(): void {
+    const fen = this.fen();
+    this.posFens = [fen];
+    this.posCounts = new Map([[positionKey(fen), 1]]);
+  }
+
+  private trackPosition(): void {
+    const fen = this.fen();
+    this.posFens.push(fen);
+    const key = positionKey(fen);
+    this.posCounts.set(key, (this.posCounts.get(key) ?? 0) + 1);
+  }
+
+  private untrackPosition(): void {
+    const fen = this.posFens.pop();
+    if (!fen) return;
+    const key = positionKey(fen);
+    const next = (this.posCounts.get(key) ?? 1) - 1;
+    if (next <= 0) this.posCounts.delete(key);
+    else this.posCounts.set(key, next);
   }
 }
 

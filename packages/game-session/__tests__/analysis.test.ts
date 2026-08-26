@@ -71,6 +71,8 @@ describe('createUciAssistEngine', () => {
     expect(last).toEqual([1, 2, 3]);
     expect(t.written.some(l => l === 'setoption name MultiPV value 3')).toBe(true);
     expect(t.written.some(l => l.startsWith('go infinite'))).toBe(true);
+    // Bare-FEN position (no moves requested) stays unchanged.
+    expect(t.written.some(l => l === 'position fen fen-x')).toBe(true);
 
     assist.stop();
     expect(t.written.some(l => l === 'stop')).toBe(true);
@@ -88,6 +90,12 @@ describe('createUciAssistEngine', () => {
     t.feed('info depth 9 multipv 1 score cp 999 pv z9z8'); // stale for fen-one
 
     expect(seen[seen.length - 1]).toEqual([]);
+  });
+
+  it('forwards move history so the engine can score repetitions', async () => {
+    const { assist, t } = await makeAssist();
+    await assist.begin('start-fen', { moves: ['a1a2', 'b2b3'] });
+    expect(t.written.some(l => l === 'position fen start-fen moves a1a2 b2b3')).toBe(true);
   });
 
   it('dispose stops and quits the driver', async () => {

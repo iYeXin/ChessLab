@@ -106,6 +106,9 @@ importers:
       '@chesslab/rules-chess':
         specifier: workspace:*
         version: link:../rules-chess
+      '@chesslab/rules-xiangqi':
+        specifier: workspace:*
+        version: link:../rules-xiangqi
 
   packages/persistence:
     dependencies:

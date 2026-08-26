@@ -75,4 +75,31 @@ describe('choosePikafishMove (natural variety policy)', () => {
   it('falls back to bestmove when no usable infos', () => {
     expect(choosePikafishMove(new Map(), 'h2e2', spec)).toBe('h2e2');
   });
+
+  it('allowCandidate vetoes randomized alternatives but never the bestmove', () => {
+    const infos = new Map([
+      [1, info(1, ['h2e2'], { scoreCp: 30 })],
+      [2, info(2, ['b0c2'], { scoreCp: 10 })], // near-equal → would be pooled
+      [3, info(3, ['h6g4'], { scoreCp: 5 })], // near-equal → would be pooled
+    ]);
+    const veto = (mv: string) => mv !== 'b0c2' && mv !== 'h6g4'; // only top survives
+    for (let i = 0; i < 50; i++) {
+      expect(choosePikafishMove(infos, 'h2e2', spec, Math.random, veto)).toBe('h2e2');
+    }
+    // bestmove exempt from the veto even when it "fails" the predicate.
+    expect(choosePikafishMove(infos, 'h2e2', spec, () => 0.5, () => false)).toBe('h2e2');
+  });
+
+  it('allowCandidate receives every candidate move', () => {
+    const infos = new Map([
+      [1, info(1, ['h2e2'], { scoreCp: 30 })],
+      [2, info(2, ['b0c2'], { scoreCp: 10 })],
+    ]);
+    const seen: string[] = [];
+    choosePikafishMove(infos, 'h2e2', spec, () => 0, mv => {
+      seen.push(mv);
+      return true;
+    });
+    expect(seen).toContain('b0c2'); // the non-top pool member was probed
+  });
 });
