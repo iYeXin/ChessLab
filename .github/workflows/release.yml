@@ -211,6 +211,8 @@ jobs:
     needs: [sanity, build-windows, build-android]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write  # 显式声明 release 权限（创建 Release/上传附件所需）
     steps:
       - uses: actions/checkout@v4
         with:
@@ -225,7 +227,6 @@ jobs:
         run: |
           mkdir -p dist
           cp -r dist-artifacts/* dist/ 2>/dev/null || true
-          # flatten nested portable dir if present
           if [ -d "dist-artifacts/dist-windows-portable-dir" ]; then
             cp -r dist-artifacts/dist-windows-portable-dir/* dist/ 2>/dev/null || true
           fi
@@ -238,7 +239,6 @@ jobs:
         run: |
           set -euo pipefail
           VER="${{ needs.sanity.outputs.version }}"
-          # Extract [VER] section from CHANGELOG.md (including header, until next ## [)
           awk -v ver="## \\[${VER}\\]" '
             $0 ~ ver {flag=1; print; next}
             flag && /^## \[/ {exit}
@@ -248,12 +248,10 @@ jobs:
             echo "No changelog entry for ${VER}, using tag message" > /tmp/notes.md
             git tag -l --format="%(contents)" "${{ needs.sanity.outputs.tag }}" >> /tmp/notes.md 2>/dev/null || true
           fi
-          # Also append full changelog link
           echo "" >> /tmp/notes.md
           echo "---" >> /tmp/notes.md
           echo "Full changelog: https://github.com/${{ github.repository }}/compare/v${VER}...HEAD" >> /tmp/notes.md || true
           cat /tmp/notes.md
-          # multiline output
           {
             echo "notes<<EOF"
             cat /tmp/notes.md
@@ -261,7 +259,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2  # JavaScript Action
         with:
           tag_name: ${{ needs.sanity.outputs.tag }}
           name: ChessLab ${{ needs.sanity.outputs.tag }}
