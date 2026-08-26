@@ -146,7 +146,7 @@ function CuratedList(props: { tab: Tab; onPick(p: Puzzle): void }) {
     <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
       <div style={{ width: '100%', maxWidth: 420, display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ textAlign: 'center', color: HUB.muted, fontSize: 11, letterSpacing: 0.5 }}>
-          {solved}/{puzzles.length} 已完成 · 每局一步
+          {solved}/{puzzles.length} 已完成 · 人机对战
         </div>
         {[1, 2, 3, 4, 5].map(lv => {
           const list = grouped[lv];

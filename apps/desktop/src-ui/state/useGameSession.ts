@@ -86,6 +86,8 @@ export function useGameSession(args: {
   difficultySecond?: 1 | 2 | 3 | 4 | 5;
   stepMode?: boolean;
   autoDelayMs?: number;
+  /** Initial position FEN; omit for standard start position. */
+  initialFen?: string;
   /** W2: Tauri transport factories; omit for local two-player mode. */
   factories?: {
     engineRunnerFactory: EngineRunnerFactory;
@@ -97,7 +99,7 @@ export function useGameSession(args: {
   capabilities: SessionCapabilities;
   sessionRef: React.RefObject<GameSession | null>;
 } {
-  const { gameKey, gameType, mode, humanSide, difficulty, difficultySecond, stepMode, autoDelayMs, factories } = args;
+  const { gameKey, gameType, mode, humanSide, difficulty, difficultySecond, stepMode, autoDelayMs, initialFen, factories } = args;
 
   const [state, setState] = useState<SessionUiState>({
     pieces: {},
@@ -138,8 +140,9 @@ export function useGameSession(args: {
       } as const;
     };
 
+    const rules = gameType === 'chess' ? new ChessRules(initialFen) : new XiangqiRules(initialFen);
     const session = new GameSession({
-      rules: gameType === 'chess' ? new ChessRules() : new XiangqiRules(),
+      rules,
       white: playerFor('w'),
       black: playerFor('b'),
       autoPlay,

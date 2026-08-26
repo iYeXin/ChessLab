@@ -13,7 +13,7 @@ export interface Puzzle {
   /** 标准 FEN：chess 8行，xiangqi 10行 */
   fen: string;
   sideToMove: Side;
-  /** 解法序列（UCI/ICCS）。v1 均为「找最佳着」单步，未来可扩展为完整主变 + 自动应着 */
+  /** 参考解法（UCI/ICCS）。残局现为完整人机对战，解法仅作参考/提示，不再做单步强制判定 */
   solution: MoveUci[];
   /** 主题标签，用于筛选与展示 */
   themes: string[];
