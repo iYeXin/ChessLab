@@ -14,7 +14,7 @@
 import { existsSync } from 'node:fs';
 import { parseManifest } from './engine-paths';
 import { NodeProcessTransport } from './node-transport';
-import { PIKAFISH_PROFILE, UciEngineDriver } from '../packages/engine-uci/src';
+import { PIKAFISH_PROFILE, UciEngineDriver, engineOptionPresetForLevel } from '../packages/engine-uci/src';
 import { XiangqiRules } from '../packages/rules-xiangqi/src';
 
 async function main(): Promise<number> {
@@ -60,39 +60,38 @@ async function main(): Promise<number> {
       await driver.quit();
       console.log('[pf] OK');
 
-      // ---- mode 2: native strength options ---------------------------------
-      // The "engine options" difficulty mode is only viable if this binary
-      // really exposes UCI_LimitStrength / UCI_Elo / Skill Level.
+      // ---- mode 2: engine-option strength (Skill Level) ---------------------
+      // Mode 2 drives the engine's own `Skill Level`, so verify the binary
+      // exposes it and that the shipped preset really reaches both ends.
       const driver2 = new UciEngineDriver(PIKAFISH_PROFILE);
       await driver2.start(new NodeProcessTransport({ command: pikafishPath }));
       if (pikafishNnue) await driver2.setOptions({ EvalFile: pikafishNnue });
       await driver2.newGame();
 
-      for (const opt of ['UCI_LimitStrength', 'UCI_Elo', 'Skill Level', 'MultiPV']) {
+      for (const opt of ['Skill Level', 'Mate Threat Depth']) {
         if (!driver2.availableOptions.has(opt)) {
           throw new Error(`expected option '${opt}' on Pikafish ${pikafishPath}`);
         }
       }
-      const eloDef = driver2.availableOptions.get('UCI_Elo');
-      console.log(
-        `[pf] mode2 options OK: UCI_Elo ${eloDef?.min ?? '?'}..${eloDef?.max ?? '?'}, ` +
-          `Skill Level 0..20, native limiting available`,
-      );
+      const skillDef = driver2.availableOptions.get('Skill Level');
+      console.log(`[pf] mode2 option OK: Skill Level ${skillDef?.min ?? '?'}..${skillDef?.max ?? '?'}`);
 
       const rules2 = new XiangqiRules();
       const openingFen = rules2.fen();
-      const searchAt = async (elo: number): Promise<string | null> => {
+      const searchAtLevel = async (level: number) => {
         // Exactly what engineOptionsStrategy() plans for a level.
-        await driver2.setOptions({ UCI_LimitStrength: true, UCI_Elo: elo, MultiPV: 1 });
-        const r = await driver2.search({ fen: openingFen }, { movetimeMs: 800 });
-        return r.bestmove;
+        const preset = engineOptionPresetForLevel(level);
+        await driver2.setOptions(preset.options);
+        const r = await driver2.search({ fen: openingFen }, preset.limits);
+        return { skill: preset.options['Skill Level'], bestmove: r.bestmove };
       };
-      const minElo = eloDef?.min ?? 1350;
-      const maxElo = eloDef?.max ?? 2850;
-      const weak = await searchAt(minElo);
-      const strong = await searchAt(maxElo);
-      console.log(`[pf] mode2 elo ${minElo} -> ${weak}   elo ${maxElo} -> ${strong}`);
-      for (const mv of [weak, strong]) {
+      const weak = await searchAtLevel(2); // 入门  -> Skill 0
+      const strong = await searchAtLevel(18); // 特级 -> Skill 20
+      console.log(`[pf] mode2 skill ${weak.skill} -> ${weak.bestmove}   skill ${strong.skill} -> ${strong.bestmove}`);
+      if (weak.skill !== 0 || strong.skill !== 20) {
+        throw new Error(`mode2 skill mapping off: ${weak.skill} / ${strong.skill}`);
+      }
+      for (const mv of [weak.bestmove, strong.bestmove]) {
         if (!mv || !legal.has(mv)) throw new Error(`mode2 produced an illegal bestmove: ${mv}`);
       }
       await driver2.quit();

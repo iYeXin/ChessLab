@@ -87,12 +87,4 @@ export interface EngineProfile {
    * absolute path and pass it through `EvalFile` before first search.
    */
   requiresExternalNnue: boolean;
-  /**
-   * Exposes `UCI_LimitStrength` + `UCI_Elo`, i.e. calibrated native strength
-   * limiting. True for Pikafish <= 2023-03-05 (the version we ship); later
-   * Pikafish releases dropped it.
-   */
-  supportsLimitStrength: boolean;
-  /** Exposes the `Skill Level` spin option (0..20). */
-  supportsSkillLevel: boolean;
 }

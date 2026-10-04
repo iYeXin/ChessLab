@@ -177,7 +177,7 @@ UCI 引擎就可用。
 | 模式 | 策略 | 做法 | 随机 |
 |---|---|---|---|
 | 1（默认） | `hostWeakenedStrategy()` | `nodes` + 浅 `depth`（跨设备确定）+ `movetime` 慢机安全帽 | 仅近分着法间 |
-| 2 | `engineOptionsStrategy(overrides)` | 直接下发引擎原生 `UCI_Elo` / `Skill Level` 等选项（`multiPv: 1`） | 无（同局面同选项恒同着） |
+| 2 | `engineOptionsStrategy(overrides)` | 直接下发引擎原生 `Skill Level` 等选项（`multiPv: 1`） | 无（同局面同选项恒同着） |
 | 3 | `createOnnxRunner()`（不走 UCI 进程） | WebView 内 ONNX 档位模型推理 | 按温度预设采样 |
 
 **模式 1 · 宿主弱化**
@@ -187,9 +187,15 @@ UCI 引擎就可用。
 
 **模式 2 · 引擎原生选项**
 
-Pikafish **2023-03-05 是最后一个提供原生棋力选项的版本**（`UCI_Elo` 1350–2850、
-`Skill Level` 0–20、`UCI_LimitStrength`）；更晚的版本移除了它们，所以引擎版本与模式 2 是绑定的。
-选项表 `PIKAFISH_STRENGTH_OPTIONS` 由实际 `uci` 输出转录，供模态框做范围校验与展示。
+Pikafish **2023-03-05 是最后一个提供 `Skill Level` 的版本**，所以引擎版本与模式 2 是绑定的。
+
+棋力旋钮用 **`Skill Level`**（5 档 = 0/5/10/15/20），**不用 `UCI_Elo`**：后者下限 1350 分，
+对「入门」来说太强。`mode2SkillForLevel()` 用 `(clamp(level,2,18)-2)/16*20` 把五个档位
+精确锚定到 0/5/10/15/20。
+
+选项表 `PIKAFISH_STRENGTH_OPTIONS` 只保留**真正影响棋力**的项（`Skill Level`、
+`Mate Threat Depth`），其余引擎上报项刻意剔除，避免做成摆设控件——判据与清单见
+`packages/engine-uci/src/profiles.ts` 的表注释。
 
 **模式 3 · ONNX 档位模型**
 
@@ -267,14 +273,14 @@ Pikafish **2023-03-05 是最后一个提供原生棋力选项的版本**（`UCI_
 | 模式 2 与引擎版本绑定 | 只有 ≤ 2023-03-05 的 Pikafish 提供 `Skill Level` / `UCI_Elo` | 换引擎时同步更新 `PIKAFISH_STRENGTH_OPTIONS` |
 | `images/` 截图 | 首页与设置页布局已变，设置页 / 残局页截图已移除待补拍；难度模态框尚无截图 | 补拍后写回 README |
 | 截图自动化 | `scripts/screenshot-window.ps1` / `click-window.ps1` 依赖 `Get-Process ... MainWindowHandle` 取窗口，可能命中 Tauri 的辅助隐藏窗口而拍出无效图 | 改为按窗口标题枚举（`EnumWindows`）后再截图 |
-| **APK 体积 143 MB** | 见 §10：4 个 ABI 各嵌一份完整前端 | 默认只出 arm64-v8a；并去掉重复的 onnxruntime wasm |
-| **非 arm64 ABI 没有引擎** | `build.js` 只把引擎同步到 `jniLibs/arm64-v8a`，且 Pikafish 官方 Android 构建本身只有 arm64。因此 universal APK 里的 armeabi-v7a / x86 / x86_64 装了也**没有可执行引擎**（外壳会提示「未找到引擎程序」） | 与上一条一起解决：只出 arm64-v8a |
+| **APK 体积 143 MB** | 见 §10：4 个 ABI 各嵌一份完整前端 | 已默认额外产出 **arm64-v8a 单架构包（≈51 MB）**；通用包仍保留 |
+| 非 arm64 ABI 没有引擎 | `build.js` 只把引擎同步到 `jniLibs/arm64-v8a`，且 Pikafish 官方 Android 构建本身只有 arm64。因此通用 APK 里的 armeabi-v7a / x86 / x86_64 装了也**没有可执行引擎**（界面提示「未找到引擎程序」，模式 3 仍可用） | 已通过 arm64 专用包规避；如需彻底一致可考虑不再出通用包 |
 
 ---
 
 ## 10. APK 体积构成（实测）与优化方向
 
-实测 `ChessNext-0.4.0-alpha-android-universal.apk` = **143.0 MB**，其中 `lib/` 占 **140.5 MB（98%）**：
+实测通用包 `ChessNext-0.4.0-alpha-android-universal.apk` = **143.0 MB**，其中 `lib/` 占 **140.5 MB（98%）**：
 
 | APK 内条目 | 原始 | APK 内 | 说明 |
 |---|---:|---:|---|
@@ -299,10 +305,11 @@ Pikafish **2023-03-05 是最后一个提供原生棋力选项的版本**（`UCI_
 
 | 措施 | 预计节省 | 代价 |
 |---|---:|---|
-| 只出 `arm64-v8a`（`tauri android build --target aarch64`；模拟器用户可另出 x86_64） | ≈ 92 MB ⇒ APK ≈ 51 MB | 放弃 armv7/x86 真机与模拟器 |
+| ✅ **已实现**：额外产出 `arm64-v8a` 单架构包（`tauri android build --target aarch64 --apk`，默认同时产出，`--no-arm64` 可关） | 实测 **143.0 MB → 50.8 MB** | 通用包仍一并产出，不额外损失 |
 | 去掉重复的 onnxruntime wasm（改为显式 `import 'onnxruntime-web/wasm'` + `'.../webgpu'`，让 Vite 只 emit 一次，不再手工拷进 `public/ort`） | 每 ABI ≈ 10 MB | 需在真机复核 WebGPU/WASM 回退 |
 | 只保留一个 wasm 变体（放弃 WebGPU 或放弃 WASM 回退） | 每 ABI ≈ 5 MB | 失去其中一条回退路径 |
 | 档位模型改为首次使用时下载 | 每 ABI ≈ 8 MB | 破坏「完全离线」的定位 |
-| 发布走 AAB（Play 按 ABI 切分） | 用户下载 ≈ 51 MB | 仅适用于 Play 分发 |
+| 不再产出通用包（只发 arm64） | 省去 143 MB 的产物 | 模拟器 / 32 位真机无法安装 |
 
-组合「只出 arm64-v8a + 去掉重复 wasm」后，单 ABI APK 估算 ≈ 40 MB。
+单架构包实测构成（50.8 MB）：`libchessnext_lib.so` 30.60 MB + `libpikafish_nnue.so` 17.24 MB + `libpikafish.so` 0.61 MB，仅 `arm64-v8a` 一个 ABI。
+若再去掉重复 wasm，单架构包估算 ≈ 41 MB。

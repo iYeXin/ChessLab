@@ -41,7 +41,7 @@
 | 模式 | 名称 | 做法 | 额外资源 |
 | ---- | ---- | ---- | -------- |
 | **1** | 搜索预算弱化（默认） | `nodes` + `depth` 主限 + `movetime` 安全帽，**仅在同分着法间随机**（近分随机 + 防重复护栏） | 无 |
-| **2** | 引擎原生棋力选项 | 直接用引擎自己的 `UCI_Elo` / `Skill Level`，**不做主机随机**；每档选项值**可自定义** | 无（同一引擎） |
+| **2** | 引擎棋力选项 | 直接用引擎自己的 `Skill Level`（5 档 = 0/5/10/15/20），**不做主机随机**；选项值与搜索预算**可自定义** | 无（同一引擎） |
 | **3** | 档位模型 T1–T5（ONNX） | 研究产出的五个档位模型，在 WebView 内用 `onnxruntime-web` 推理（**WebGPU → WASM 回退**），T1 最弱、T5 最强 | `pnpm fetch:assets`（约 64 MB） |
 
 ### 模式 1 · 搜索预算弱化（默认）
@@ -50,21 +50,21 @@
 - **近分随机**：仅当多路着法分差落在模糊窗口内（分差不悬殊、不致命、不送杀 / 不被杀）时随机选一个，否则必走最优着——**不故意走错**。
 - 低难度额外加**防重复护栏**：候选着若会造成局面第二次出现则不进入随机池；引擎最优着本身豁免。
 
-### 模式 2 · 引擎原生棋力选项
+### 模式 2 · 引擎棋力选项
 
 Pikafish **2023-03-05 是最后一个仍提供原生棋力选项的版本**（已用 `uci` 实测）：
 
 ```
-option name Skill Level        type spin default 20   min 0    max 20
-option name UCI_LimitStrength  type check default false
-option name UCI_Elo            type spin default 1350 min 1350 max 2850
+option name Skill Level        type spin default 20 min 0 max 20
+option name Mate Threat Depth  type spin default 1  min 0 max 10
 ```
 
-- 五个档位默认映射到引擎自己的 Elo 区间（1350 → 2850 线性铺开）。
-- **选项值可自定义**：模态框列出引擎上报的 14 项棋力相关选项（含范围与枚举），数值超出范围会被夹到边界；另有搜索预算（思考时间 / 节点上限 / 深度上限）可改。改动**按档位持久化**，可一键「恢复本档默认」。
+- 五个档位映射到引擎自己的 **`Skill Level`**：入门 / 业余 / 进阶 / 大师 / 特级 = **0 / 5 / 10 / 15 / 20**。
+  特意不用 `UCI_Elo`：它的下限是 1350 分，对「入门」来说太强了；`Skill Level` 0 才是引擎真正的最弱设置。
+- **选项值可自定义**：模态框列出真正影响棋力的选项（带范围校验，越界值夹到边界）以及搜索预算（思考时间 / 节点上限 / 深度上限）。改动**按档位持久化**，可一键「恢复默认」。
 - 本模式**不做主机侧随机**：同一局面 + 同一组选项，永远给出同一着法。
 
-> 需求里期望的「Elo（有范围限制）」正是 `UCI_Elo`。若将来换引擎，只要它上报了选项，编辑器会自动列出（表驱动：`PIKAFISH_STRENGTH_OPTIONS`）。
+> 引擎上报但**不影响棋力**的选项被刻意移除，不做成摆设控件：`UCI_Elo` / `UCI_LimitStrength`（Elo 下限偏强）、`MultiPV`（本模式走 bestmove，无效果）、`Slow Mover` / `Move Overhead` / `nodestime`（只在时间制下生效，这里用固定 movetime/nodes）、`Threads` / `Hash`（资源而非棋力）、`Sixty Move Rule` / `Repetition Rule` / `Repetition Fold`（裁决规则）、`UCI_ShowWDL`（输出格式）。
 
 ### 模式 3 · 档位模型 T1–T5（ONNX）
 
@@ -109,6 +109,16 @@ pnpm build:android       # 仅 Android（需 ANDROID_HOME / NDK）
 ```
 
 产物统一输出到仓库根目录 `dist/`，由 `build.js` 负责命名、签名（Android apksigner）与便携包压缩。
+
+Android 会出两种 APK（`--no-arm64` 可只出通用包）：
+
+| 产物 | 体积 | 说明 |
+| ---- | ---- | ---- |
+| `ChessNext-<版本>-android-arm64.apk` | ≈ 51 MB | **仅 arm64-v8a，真机推荐** |
+| `ChessNext-<版本>-android-universal.apk` | ≈ 143 MB | 含 4 个 ABI。**注意**：引擎二进制只有 arm64-v8a 版本（Pikafish 官方未发布 armv7 / x86 的 Android 构建），所以其它 ABI 上模式 1/2 不可用（界面会提示「未找到引擎程序」），模式 3 仍可用 |
+| `ChessNext-<版本>-android-universal.aab` | ≈ 144 MB | 上架用（Play 会按 ABI 切分） |
+
+体积构成与进一步优化方向见 [`docs/02-tauri-migration.md`](docs/02-tauri-migration.md) §10。
 
 `pnpm fetch:assets` 的来源：
 
@@ -282,7 +292,7 @@ pnpm build:android       # 仅 Android（需 ANDROID_HOME / NDK）
 | 项目 | 说明 |
 | ---- | ---- |
 | **应用与包标识改名** | `ChessLab` → **`ChessNext`**；npm 作用域 `@chesslab/*` → `@chessnext/*`；Android `com.chesslab.app` → `com.chessnext.app`；Rust crate `chesslab` → `chessnext`（lib `chessnext_lib`）；存储键 `chessnext.settings.v1` / `chessnext.puzzles.progress.v1`；产物名 `ChessNext-<版本>-*` |
-| **引擎版本** | Pikafish 2026-01-02 → **2023-03-05**（体积更小，且是最后一个提供 `UCI_Elo` / `Skill Level` 的版本） |
+| **引擎版本** | Pikafish 2026-01-02 → **2023-03-05**（体积更小，且是最后一个提供 `Skill Level` 的版本，模式 2 依赖它） |
 | **三套棋力方案** | 见上文；新增 `EngineTurnStrategy` 抽象缝与 `packages/engine-onnx`；**观战模式红黑可分别选择（允许异构）** |
 | **测试人员模式** | 难度选择模态框 |
 

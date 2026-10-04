@@ -10,11 +10,10 @@ import type { EngineId, EngineInfo, EngineProfile, GoLimits, UciOptionValue } fr
 export const PIKAFISH_VERSION = '2023-03-05';
 
 /**
- * Why this specific version: it is the last Pikafish release that exposes the
- * classic Stockfish-family strength controls — `Skill Level` (0..20),
- * `UCI_LimitStrength` and `UCI_Elo` (1350..2850). Later releases removed them,
- * which is why the "engine options" difficulty mode can only work here.
- * Verified with `pikafish-avx2.exe` + `uci` (see PIKAFISH_STRENGTH_OPTIONS).
+ * Why this specific version: it is the last Pikafish release that still exposes
+ * the `Skill Level` spin option (0..20), which is what mode 2 ("engine options")
+ * drives. Later releases removed it. Verified with `pikafish-avx2.exe` + `uci`
+ * — see PIKAFISH_STRENGTH_OPTIONS.
  */
 export const PIKAFISH_PROFILE: EngineProfile = {
   id: 'pikafish',
@@ -26,8 +25,6 @@ export const PIKAFISH_PROFILE: EngineProfile = {
     Hash: 128,
   },
   requiresExternalNnue: true, // ships as external pikafish.nnue -> EvalFile
-  supportsLimitStrength: true,
-  supportsSkillLevel: true,
 };
 
 export const ENGINE_PROFILES: Record<string, EngineProfile> = {
@@ -131,6 +128,28 @@ export interface EngineOptionsOverrides {
   limits?: GoLimits;
 }
 
+/**
+ * Strength knob for mode 2: the engine's own `Skill Level`, spread over the five
+ * shipped difficulties.
+ *
+ * `Skill Level` (0..20) is used rather than `UCI_Elo` on purpose: the engine's
+ * Elo floor is 1350, which would make 「入门」 anything but beginner-friendly.
+ * The mapping below puts the five difficulties at 0 / 5 / 10 / 15 / 20, i.e.
+ * the weakest setting really is the engine's weakest.
+ *
+ * Levels are the engine levels behind the difficulty labels (2/6/10/14/18), so
+ * the linear form below lands exactly on those five anchor points; off-scale
+ * levels (a hint asks for 20) clamp to the ends.
+ */
+export const MODE2_SKILL_MIN_LEVEL = 2;
+export const MODE2_SKILL_MAX_LEVEL = 18;
+
+export function mode2SkillForLevel(level: number): number {
+  const lvl = clamp(Math.round(level), MODE2_SKILL_MIN_LEVEL, MODE2_SKILL_MAX_LEVEL);
+  const span = MODE2_SKILL_MAX_LEVEL - MODE2_SKILL_MIN_LEVEL; // 16
+  return clamp(Math.round(((lvl - MODE2_SKILL_MIN_LEVEL) / span) * 20), 0, 20);
+}
+
 /** Default option presets for the "engine options" strategy. */
 export function engineOptionPresetForLevel(
   level: number,
@@ -139,14 +158,9 @@ export function engineOptionPresetForLevel(
 ): { options: Record<string, UciOptionValue>; limits: GoLimits } {
   const lvl = clamp(Math.round(level), 1, 20);
 
-  // Spread the 5 shipped difficulty levels across the engine's own Elo range.
-  const eloSpec = strengthOptionSpec('UCI_Elo');
-  const minElo = eloSpec?.min ?? 1350;
-  const maxElo = eloSpec?.max ?? 2850;
-
   const options: Record<string, UciOptionValue> = {
-    UCI_LimitStrength: true,
-    UCI_Elo: Math.round(minElo + ((maxElo - minElo) * (lvl - 1)) / 19),
+    'Skill Level': mode2SkillForLevel(lvl),
+    // Keep a single PV: mode 2 plays the engine's bestmove verbatim.
     MultiPV: 1,
   };
   const limits: GoLimits = { movetimeMs: pickThinkTimeMs(lvl, clock) };
@@ -181,24 +195,25 @@ export interface StrengthOptionSpec {
 }
 
 /**
- * The strength-relevant options of Pikafish 2023-03-05, transcribed from
- * `pikafish-avx2.exe` -> `uci`. These drive (and validate) mode 2's editor.
+ * The engine options that actually change how strongly Pikafish 2023-03-05
+ * plays, transcribed from `pikafish-avx2.exe` -> `uci`. These drive (and
+ * validate) mode 2's editor.
+ *
+ * Deliberately short. Everything else the engine reports was removed because it
+ * does not affect playing strength under this app's fixed search limits:
+ *   - `UCI_LimitStrength` / `UCI_Elo` — an alternative strength scale whose
+ *     floor (1350) is far too strong for 「入门」; mode 2 uses `Skill Level`.
+ *   - `MultiPV` — mode 2 plays the engine's bestmove verbatim, so it changes
+ *     nothing here (a placebo control).
+ *   - `Slow Mover` / `Move Overhead` / `nodestime` — time-management knobs that
+ *     only matter under a `go wtime/btime` clock; we send `go movetime/nodes`.
+ *   - `Threads` / `Hash` — resource usage, not playing strength at fixed work.
+ *   - `Sixty Move Rule` / `Repetition Rule` / `Repetition Fold` — adjudication.
+ *   - `UCI_ShowWDL` — output formatting only.
  */
 export const PIKAFISH_STRENGTH_OPTIONS: readonly StrengthOptionSpec[] = [
-  { name: 'UCI_LimitStrength', type: 'check', defaultValue: false, hint: '启用原生限强（与 UCI_Elo 配合）' },
-  { name: 'UCI_Elo', type: 'spin', min: 1350, max: 2850, defaultValue: 1350, hint: '限强目标等级分' },
-  { name: 'Skill Level', type: 'spin', min: 0, max: 20, defaultValue: 20, hint: '技能等级：0 最弱，20 最强' },
-  { name: 'MultiPV', type: 'spin', min: 1, max: 500, defaultValue: 1, hint: '多主变数量（本模式不走主机随机）' },
-  { name: 'Slow Mover', type: 'spin', min: 10, max: 1000, defaultValue: 100, hint: '时间管理保守度' },
+  { name: 'Skill Level', type: 'spin', min: 0, max: 20, defaultValue: 20, hint: '棋力等级：0 最弱，20 最强' },
   { name: 'Mate Threat Depth', type: 'spin', min: 0, max: 10, defaultValue: 1, hint: '杀棋威胁搜索深度' },
-  { name: 'nodestime', type: 'spin', min: 0, max: 10000, defaultValue: 0, hint: '按节点数计时' },
-  { name: 'Move Overhead', type: 'spin', min: 0, max: 5000, defaultValue: 10, hint: '每步预留时间（毫秒）' },
-  { name: 'Threads', type: 'spin', min: 1, max: 1024, defaultValue: 1, hint: '搜索线程数' },
-  { name: 'Hash', type: 'spin', min: 1, max: 33554432, defaultValue: 16, hint: '置换表大小（MB）' },
-  { name: 'Sixty Move Rule', type: 'check', defaultValue: true, hint: '启用六十回合自然限着' },
-  { name: 'Repetition Rule', type: 'combo', vars: ['AsianRule', 'ChineseRule'], defaultValue: 'AsianRule', hint: '重复局面规则' },
-  { name: 'Repetition Fold', type: 'combo', vars: ['TwoFold', 'RootThreeFold', 'ThreeFold'], defaultValue: 'RootThreeFold', hint: '重复折叠方式' },
-  { name: 'UCI_ShowWDL', type: 'check', defaultValue: false, hint: 'info 行输出胜/和/负概率' },
 ] as const;
 
 export function strengthOptionSpec(name: string): StrengthOptionSpec | undefined {

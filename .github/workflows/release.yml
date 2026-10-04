@@ -196,7 +196,8 @@ jobs:
       - name: Verify artifacts
         run: |
           ls -lh dist/
-          test -f "dist/ChessNext-${{ needs.sanity.outputs.version }}-android-universal.apk" || (echo "apk missing" && exit 1)
+          test -f "dist/ChessNext-${{ needs.sanity.outputs.version }}-android-universal.apk" || (echo "universal apk missing" && exit 1)
+          test -f "dist/ChessNext-${{ needs.sanity.outputs.version }}-android-arm64.apk" || (echo "arm64 apk missing" && exit 1)
 
       - uses: actions/upload-artifact@v4
         with:
@@ -274,6 +275,7 @@ jobs:
             dist/ChessNext-*-windows-x64-portable.zip
             dist/ChessNext-*-windows-x64-portable.exe
             dist/ChessNext-*-android-universal.apk
+            dist/ChessNext-*-android-arm64.apk
             dist/ChessNext-*-android-universal.aab
           fail_on_unmatched_files: false
           generate_release_notes: false

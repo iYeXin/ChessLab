@@ -26,6 +26,9 @@ const ANDROID_KEYSTORE_PASSWORD = process.env.ANDROID_KEYSTORE_PASSWORD ?? ANDRO
 const args = process.argv.slice(2);
 const wantWindows = !args.includes('--android') && !args.includes('--no-windows');
 const wantAndroid = !args.includes('--windows') && !args.includes('--no-android');
+// The engine is arm64-only, so an arm64-v8a APK is both smaller (~1/3) and the
+// only one whose modes 1/2 can actually run.
+const wantArm64Only = !args.includes('--no-arm64');
 
 const distDir = join(root, 'dist');
 mkdirSync(distDir, { recursive: true });
@@ -146,49 +149,59 @@ if (wantAndroid) {
     TAURI_ANDROID_KEY_PASSWORD: ANDROID_KEY_PASSWORD,
   };
 
-  // Use Tauri's android build (will produce unsigned, we sign afterwards)
-  run('pnpm --filter desktop tauri android build', { cwd: root, env });
-
+  // Gradle always writes to apk/universal/release, whatever the target set is,
+  // so sign immediately after each build.
   const apkDir = join(root, 'apps/desktop/src-tauri/gen/android/app/build/outputs/apk/universal/release');
   const unsigned = join(apkDir, 'app-universal-release-unsigned.apk');
-  const signedOut = join(distDir, `ChessNext-${version}-android-universal.apk`);
-  const aabIn = join(root, 'apps/desktop/src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab');
-  const aabOut = join(distDir, `ChessNext-${version}-android-universal.aab`);
 
-  if (existsSync(unsigned)) {
-    // Sign with apksigner (use 35 if 36 not found)
+  function findApksigner() {
     let bt = process.env.ANDROID_HOME ? join(process.env.ANDROID_HOME, 'build-tools/36.1.0/apksigner.bat') : '';
     if (!existsSync(bt)) bt = join(process.env.ANDROID_HOME ?? '', 'build-tools/35.0.0/apksigner.bat');
     if (!existsSync(bt)) {
-      // fallback: find any apksigner
       try {
         const found = execSync('where apksigner.bat', { encoding: 'utf8' }).trim().split('\n')[0]?.trim();
         if (found) bt = found;
       } catch {}
     }
-    if (bt && existsSync(bt)) {
-      log(`Signing APK → ${signedOut}`);
-      run(`"${bt}" sign --ks "${ksPath}" --ks-pass pass:${ANDROID_KEYSTORE_PASSWORD} --ks-key-alias ${ANDROID_KEY_ALIAS} --key-pass pass:${ANDROID_KEY_PASSWORD} --in "${unsigned}" --out "${signedOut}" --verbose`);
-      // verify
-      try { execSync(`"${bt}" verify --verbose "${signedOut}"`, { stdio: 'inherit' }); } catch {}
-      log(`Android APK → ${signedOut} (${(statSync(signedOut).size / 1024 / 1024).toFixed(1)} MB)`);
+    return existsSync(bt) ? bt : null;
+  }
+  const apksigner = findApksigner();
+
+  /** Build for `targets` (empty array = every ABI) and sign into dist/. */
+  function buildAndroidApk(targets, suffix) {
+    const targetArgs = targets.length ? ` --target ${targets.join(' ')}` : '';
+    log(`Building Android APK (${targets.length ? targets.join(', ') : 'all ABIs'}) ...`);
+    run(`pnpm --filter desktop tauri android build --apk${targetArgs}`, { cwd: root, env });
+
+    const signedOut = join(distDir, `ChessNext-${version}-android-${suffix}.apk`);
+    if (!existsSync(unsigned)) {
+      log(`WARN: unsigned APK not found at ${unsigned}`);
+      return null;
+    }
+    if (apksigner) {
+      run(`"${apksigner}" sign --ks "${ksPath}" --ks-pass pass:${ANDROID_KEYSTORE_PASSWORD} --ks-key-alias ${ANDROID_KEY_ALIAS} --key-pass pass:${ANDROID_KEY_PASSWORD} --in "${unsigned}" --out "${signedOut}"`);
     } else {
-      log(`apksigner not found, copying unsigned as ${signedOut}`);
+      log('apksigner not found, copying unsigned APK');
       cpSync(unsigned, signedOut);
     }
-  } else {
-    log(`WARN: unsigned APK not found at ${unsigned} — maybe build produced a different flavor`);
-    const alt = findLatest(apkDir, /\.apk$/);
-    if (alt) {
-      const outAlt = join(distDir, `ChessNext-${version}-android-${alt.name}`);
-      cpSync(alt.path, outAlt);
-      log(`Found alternative APK → ${outAlt}`);
-    }
+    log(`Android APK (${suffix}) → ${signedOut} (${(statSync(signedOut).size / 1024 / 1024).toFixed(1)} MB)`);
+    return signedOut;
   }
 
+  // 1) universal: every ABI, plus the AAB for store delivery
+  buildAndroidApk([], 'universal');
+  const aabIn = join(root, 'apps/desktop/src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab');
   if (existsSync(aabIn)) {
+    const aabOut = join(distDir, `ChessNext-${version}-android-universal.aab`);
     cpSync(aabIn, aabOut);
     log(`Android AAB → ${aabOut} (${(statSync(aabOut).size / 1024 / 1024).toFixed(1)} MB)`);
+  }
+
+  // 2) arm64-v8a only: the engine's only supported ABI, roughly a third the size
+  if (wantArm64Only) {
+    buildAndroidApk(['aarch64'], 'arm64');
+  } else {
+    log('Skipping arm64-v8a-only APK (--no-arm64)');
   }
 }
 
