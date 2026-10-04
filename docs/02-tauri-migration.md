@@ -266,4 +266,43 @@ Pikafish **2023-03-05 是最后一个提供原生棋力选项的版本**（`UCI_
 | 模式 3 资产体积 | 模型 23.2 MB + onnxruntime 运行时 40.6 MB；Vite 还会额外 emit 一份它静态引用的 WebGPU wasm | 可改为按需下载 / 只保留一套 wasm |
 | 模式 2 与引擎版本绑定 | 只有 ≤ 2023-03-05 的 Pikafish 提供 `Skill Level` / `UCI_Elo` | 换引擎时同步更新 `PIKAFISH_STRENGTH_OPTIONS` |
 | `images/` 截图 | 首页与设置页布局已变，设置页 / 残局页截图已移除待补拍；难度模态框尚无截图 | 补拍后写回 README |
-| 截图自动化 | `scripts/screenshot-window.ps1` / `click-window.ps1` 依赖 `Get-Process ... MainWindowHandle` 取窗口，可能命中 Tauri 的隐藏辅助窗口而拍出无效图 | 改为按窗口标题枚举（`EnumWindows`）后再截图 |
+| 截图自动化 | `scripts/screenshot-window.ps1` / `click-window.ps1` 依赖 `Get-Process ... MainWindowHandle` 取窗口，可能命中 Tauri 的辅助隐藏窗口而拍出无效图 | 改为按窗口标题枚举（`EnumWindows`）后再截图 |
+| **APK 体积 143 MB** | 见 §10：4 个 ABI 各嵌一份完整前端 | 默认只出 arm64-v8a；并去掉重复的 onnxruntime wasm |
+| **非 arm64 ABI 没有引擎** | `build.js` 只把引擎同步到 `jniLibs/arm64-v8a`，且 Pikafish 官方 Android 构建本身只有 arm64。因此 universal APK 里的 armeabi-v7a / x86 / x86_64 装了也**没有可执行引擎**（外壳会提示「未找到引擎程序」） | 与上一条一起解决：只出 arm64-v8a |
+
+---
+
+## 10. APK 体积构成（实测）与优化方向
+
+实测 `ChessNext-0.4.0-alpha-android-universal.apk` = **143.0 MB**，其中 `lib/` 占 **140.5 MB（98%）**：
+
+| APK 内条目 | 原始 | APK 内 | 说明 |
+|---|---:|---:|---|
+| `lib/arm64-v8a/libchessnext_lib.so` | 35.12 MB | 30.60 MB | Rust 库 + **整份前端** |
+| `lib/armeabi-v7a/libchessnext_lib.so` | 33.23 MB | 30.37 MB | 同上（32 位 ARM） |
+| `lib/x86/libchessnext_lib.so` | 35.98 MB | 30.93 MB | 同上（模拟器） |
+| `lib/x86_64/libchessnext_lib.so` | 35.65 MB | 30.76 MB | 同上（模拟器） |
+| `lib/arm64-v8a/libpikafish_nnue.so` | 17.23 MB | 17.24 MB | NNUE，已压缩数据故不缩 |
+| `lib/arm64-v8a/libpikafish.so` | 1.48 MB | 0.61 MB | 引擎 |
+| `classes.dex` + `resources.arsc` + 其他 | — | ≈ 3 MB | |
+
+**两个叠加的原因**
+
+1. **前端被嵌进 Rust 二进制**：Tauri 的 `generate_context!` 把 `frontendDist` 整份压进 `libchessnext_lib.so`（brotli，约 2.6:1）。本项目 `dist/` 现有 **≈ 92 MB** 原始资源：
+   - `public/models/` 23.2 MB（5 个 fp16 档位模型）
+   - `public/ort/` 40.6 MB（`ort-wasm-simd-threaded.wasm` 13.6 MB + `.jsep.wasm` 27.0 MB）
+   - `dist/assets/` 27.7 MB —— **Vite 又 emit 了一份它静态引用的 `.jsep.wasm`**，与 `public/ort/` 里的那份重复
+   - 应用 JS/CSS 约 0.7 MB
+2. **universal APK 打包 4 个 ABI**，每个 ABI 的 `.so` 都各嵌一份上述前端 ⇒ `4 × 30.6 ≈ 122.7 MB`，即 APK 的 **86%**。另外 3 个 ABI 甚至没有引擎（见 §9 最后一行）。
+
+**优化方向（按收益排序）**
+
+| 措施 | 预计节省 | 代价 |
+|---|---:|---|
+| 只出 `arm64-v8a`（`tauri android build --target aarch64`；模拟器用户可另出 x86_64） | ≈ 92 MB ⇒ APK ≈ 51 MB | 放弃 armv7/x86 真机与模拟器 |
+| 去掉重复的 onnxruntime wasm（改为显式 `import 'onnxruntime-web/wasm'` + `'.../webgpu'`，让 Vite 只 emit 一次，不再手工拷进 `public/ort`） | 每 ABI ≈ 10 MB | 需在真机复核 WebGPU/WASM 回退 |
+| 只保留一个 wasm 变体（放弃 WebGPU 或放弃 WASM 回退） | 每 ABI ≈ 5 MB | 失去其中一条回退路径 |
+| 档位模型改为首次使用时下载 | 每 ABI ≈ 8 MB | 破坏「完全离线」的定位 |
+| 发布走 AAB（Play 按 ABI 切分） | 用户下载 ≈ 51 MB | 仅适用于 Play 分发 |
+
+组合「只出 arm64-v8a + 去掉重复 wasm」后，单 ABI APK 估算 ≈ 40 MB。

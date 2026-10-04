@@ -33,6 +33,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/
   - 难度模态框与选择器新增 `modeTarget`（`global` / `white` / `black`）：观战的红方、黑方入口各自读写自己那份设置，并在标题与提示里标注所属方
   - 设置页显示三份方案（人机/残局、观战红方、观战黑方）并说明可混用
   - 新增 3 个 `game-session` 用例锁定契约：工厂收到正确的 `side` 与**该方自己的**强度、双方 runner 是不同实例、`hint()` 也会告知行棋方
+- **应用内文案精简**（不再暴露实现细节）
+  - 难度模态框：删掉「本版本有三套棋力方案…」说明段、模式 1 的只读预算明细（节点 / 深度 / MultiPV / 模糊窗口）、模式 3 的训练量 / top1 / 模型路径 / 「不代表人类段位」提示 / WebGPU→WASM 与 +Elo 说明；档位行不再显示「引擎强度 N 级」
+  - **模式 3 的档位改为直接选 T1–T5**：面板内的 T1–T5 列表即选择器，且模式 3 时隐藏上方「入门 / 业余 / …」档位行，避免两套选择器互相「对应」
+  - 模式 2 保留选项编辑器与取值范围，去掉尾部解释；温度预设标签简化为「实战 / 评测 / 贪心（调试）」
+  - 设置页「实验功能」块与引擎方案标题/提示改为短文案；选择器按钮不再显示引擎强度数字
+- 首页小字由「实验性版本 · 仅供研究」改为「**实验性版本 · 仅供测试**」
+- `docs/02-tauri-migration.md` 新增 §10：**APK 体积实测构成与优化方向**（143 MB 中 `lib/` 占 98%；4 个 ABI 各嵌一份前端；单 ABI + 去掉重复 wasm 后估算约 40 MB），并在 §9 记录「非 arm64 ABI 没有引擎」这一实测结论
 - 新增测试：`engine-onnx` 两个套件共 27 例（含**专门针对 `8099 - m` 翻转**、黑方行棋、掩码只落在合法着法、杀棋守卫优先级）与 `engine-uci` 棋力模式 10 例（Elo 区间单调、越界夹取、覆盖优先、空值剔除）
 
 ### Changed — 第二轮
@@ -86,7 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/
 - 测试改为全象棋并同步既有断言：`session.test.ts` / `assist.test.ts` / `driver.test.ts` / `protocol.test.ts` / `puzzles.test.ts` / `xiangqi.test.ts`（含新增 perft(4)）；**10 套件 89 用例全绿**
 - 引擎脚本与文档统一为皮卡鱼单引擎口径（`fetch-engines.ps1` / `sync-android-engines.ps1` / `engine-paths.ts` / `smoke-engines.ts` / `build.js` / `engines.rs`）
 - `probe-perft.ts` 重写：新增 `--divide` 逐根着法对拍；新增 `scripts/probe-moves.ts` 用于比对指定局面下的合法着法列表
-- 首页改为单一棋种卡片，并加一行小字「实验性版本 · 仅供研究」；窗口标题改为「中国象棋 实验版」
+- 首页改为单一棋种卡片，并加一行小字「实验性版本 · 仅供测试」；窗口标题改为「ChessNext 中国象棋」
 - 文档：`README.md` 重写为象棋单棋种版；`licenses/README.md` 去掉 Stockfish / chess.js / Lichess 条目；`docs/02-tauri-migration.md` 重写为架构与决策记录；`docs/puzzles/README.md` 精简为象棋题库调研
 
 ### Verified

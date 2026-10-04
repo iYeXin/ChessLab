@@ -27,7 +27,6 @@ export function DifficultyPicker(props: {
   const mode = engineModeFor(settings, target);
 
   if (settings.testerMode) {
-    const level = levelForDifficulty(props.difficulty);
     return (
       <>
         <button
@@ -49,7 +48,7 @@ export function DifficultyPicker(props: {
             {difficultyLabel(props.difficulty)}
           </span>
           <span style={{ fontSize: 10, color: '#8A8070' }}>
-            模式 {mode} · 强度 {level}
+            {mode === 3 ? `T${props.difficulty}` : `模式 ${mode}`}
           </span>
           <span style={{ flex: 1 }} />
           <span style={{ fontSize: 11, color: '#A63A2B', fontWeight: 600 }}>调整 ›</span>

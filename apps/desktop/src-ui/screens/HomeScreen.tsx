@@ -69,7 +69,7 @@ export function HomeScreen(props: {
             padding: '3px 12px',
           }}
         >
-          实验性版本 · 仅供研究
+          实验性版本 · 仅供测试
         </div>
 
         <button

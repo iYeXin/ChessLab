@@ -23,20 +23,20 @@ export interface TemperaturePreset {
 export const TEMPERATURE_PRESETS: readonly TemperaturePreset[] = [
   {
     id: 'play',
-    label: '实战 play',
-    hint: '1.00 / 0.70 / 0.25 —— 变化最自然，产品默认',
+    label: '实战',
+    hint: '变化自然，默认',
     stages: [1.0, 0.7, 0.25],
   },
   {
     id: 'arena',
-    label: '评测 arena',
-    hint: '0.30 / 0.20 / 0.10 —— 更稳定，适合自动化评测',
+    label: '评测',
+    hint: '更稳定',
     stages: [0.3, 0.2, 0.1],
   },
   {
     id: 'greedy',
-    label: '贪心 greedy（仅调试）',
-    hint: '1e-4 —— 每局完全相同，不要用于产品',
+    label: '贪心（调试）',
+    hint: '每局完全相同',
     stages: [1e-4, 1e-4, 1e-4],
   },
 ] as const;

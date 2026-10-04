@@ -4,16 +4,10 @@ import {
   PIKAFISH_STRENGTH_OPTIONS,
   SEARCH_BUDGET_FIELDS,
   engineOptionPresetForLevel,
-  pikafishSpecForLevel,
   type StrengthOptionSpec,
 } from '@chessnext/engine-uci';
-import { TEMPERATURE_PRESETS, TIER_META, tierModelPath, type TierId } from '@chessnext/engine-onnx';
-import {
-  DIFFICULTY_IDS,
-  difficultyLabel,
-  levelForDifficulty,
-  type Difficulty,
-} from '../state/difficulty';
+import { TEMPERATURE_PRESETS, TIER_IDS, type TierId } from '@chessnext/engine-onnx';
+import { DIFFICULTY_IDS, difficultyLabel, levelForDifficulty, type Difficulty } from '../state/difficulty';
 import { preloadTierSession } from '../state/onnx';
 import {
   ENGINE_MODE_LABELS,
@@ -45,7 +39,6 @@ const C = {
   muted: '#8A8070',
   accent: '#A63A2B',
   accentSoft: '#E9DCC4',
-  ok: '#3E7C4F',
 };
 
 export interface DifficultyModalProps {
@@ -67,7 +60,7 @@ export function DifficultyModal(props: DifficultyModalProps) {
 
   // Warm the ONNX session as soon as the tier is picked, so the first move in
   // a game does not pay the model-load cost.
-  const onnxTier = useMemo(() => (props.difficulty as TierId), [props.difficulty]);
+  const onnxTier = props.difficulty as TierId;
   useEffect(() => {
     if (props.visible && mode === 3) preloadTierSession(onnxTier);
   }, [props.visible, mode, onnxTier]);
@@ -111,19 +104,14 @@ export function DifficultyModal(props: DifficultyModalProps) {
         onClick={e => e.stopPropagation()}
       >
         {/* header */}
-        <div style={{ padding: '14px 16px 10px', borderBottom: `1px solid ${C.border}`, backgroundColor: '#F7F3EA' }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{props.label}</span>
-            <span style={{ fontSize: 10, color: C.accent, border: `1px solid ${C.accentSoft}`, borderRadius: 999, padding: '2px 8px' }}>
-              测试人员模式
-            </span>
-          </div>
-          <div style={{ fontSize: 10, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
-            本版本有三套棋力方案，此处统一选择；关闭测试人员模式后将直接使用上次选择的方案。
-          </div>
+        <div style={{ padding: '14px 16px', borderBottom: `1px solid ${C.border}`, backgroundColor: '#F7F3EA', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{props.label}</span>
+          <span style={{ fontSize: 10, color: C.accent, border: `1px solid ${C.accentSoft}`, borderRadius: 999, padding: '2px 8px' }}>
+            测试人员模式
+          </span>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* engine mode */}
           <Section title={target === 'global' ? '棋力方案' : `棋力方案（${targetLabel(target)}）`}>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -147,33 +135,27 @@ export function DifficultyModal(props: DifficultyModalProps) {
                 </button>
               ))}
             </div>
-            <div style={{ marginTop: 8, fontSize: 11, color: C.textSec, lineHeight: 1.5 }}>
-              <b style={{ color: C.text }}>{ENGINE_MODE_LABELS[mode].title}</b>
-              <br />
-              <span style={{ color: C.muted }}>{ENGINE_MODE_LABELS[mode].hint}</span>
+            <div style={{ marginTop: 8, fontSize: 11, color: C.muted }}>
+              {ENGINE_MODE_LABELS[mode].title} —— {ENGINE_MODE_LABELS[mode].hint}
             </div>
-            {target === 'global' ? null : (
-              <div style={{ marginTop: 6, fontSize: 10, color: C.accent, lineHeight: 1.5 }}>
-                观战模式下红黑各自独立，可混用不同模式（异构）；另一方在它自己的棋力入口里设置。
+          </Section>
+
+          {/* 档位：模式 3 由 T1–T5 列表直接选择，因此这里不重复 */}
+          {mode === 3 ? null : (
+            <Section title="档位">
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {DIFFICULTY_IDS.map(d => (
+                  <Choice
+                    key={d}
+                    label={difficultyLabel(d)}
+                    active={props.difficulty === d}
+                    onClick={() => props.onDifficulty(d)}
+                  />
+                ))}
               </div>
-            )}
-          </Section>
+            </Section>
+          )}
 
-          {/* difficulty */}
-          <Section title={`档位（引擎强度 ${level} 级）`}>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {DIFFICULTY_IDS.map(d => (
-                <Choice
-                  key={d}
-                  label={difficultyLabel(d)}
-                  active={props.difficulty === d}
-                  onClick={() => props.onDifficulty(d)}
-                />
-              ))}
-            </div>
-          </Section>
-
-          {mode === 1 ? <Mode1Panel level={level} /> : null}
           {mode === 2 ? (
             <Mode2Panel
               level={level}
@@ -181,9 +163,11 @@ export function DifficultyModal(props: DifficultyModalProps) {
               onChange={value => setMode2Override(level, value)}
             />
           ) : null}
+
           {mode === 3 ? (
             <Mode3Panel
               difficulty={props.difficulty}
+              onDifficulty={props.onDifficulty}
               temperature={settings.onnxTemperature}
               mateGuard={settings.onnxMateGuard}
               onTemperature={v => update('onnxTemperature', v)}
@@ -207,24 +191,6 @@ export function DifficultyModal(props: DifficultyModalProps) {
 }
 
 // ---------------------------------------------------------------------------
-
-function Mode1Panel(props: { level: number }) {
-  const spec = useMemo(() => pikafishSpecForLevel(props.level), [props.level]);
-  const limits = spec.limits;
-  return (
-    <Section title="模式 1 · 搜索预算（只读）">
-      <div style={{ fontSize: 11, color: C.textSec, lineHeight: 1.7 }}>
-        <Row k="搜索限制" v={limits.nodes !== undefined ? `${limits.nodes} 节点 / 深度 ${limits.depth}` : '按时间'} />
-        <Row k="时间上限" v={limits.movetimeMs !== undefined ? `${limits.movetimeMs} ms` : '—'} />
-        <Row k="MultiPV" v={`${spec.multiPv}（用于近分随机）`} />
-        <Row k="模糊窗口" v={`${spec.ambiguityWindowCp} cp`} />
-      </div>
-      <div style={{ marginTop: 6, fontSize: 10, color: C.muted, lineHeight: 1.5 }}>
-        该方案不依赖引擎选项，跨设备棋力一致；随机只发生在近分着法之间。
-      </div>
-    </Section>
-  );
-}
 
 function Mode2Panel(props: {
   level: number;
@@ -260,14 +226,9 @@ function Mode2Panel(props: {
     onChange({ options: { ...(override?.options ?? {}) }, ...merged });
   };
 
-  const overriddenCount = Object.keys(override?.options ?? {}).length;
-  const budgetOverridden = override
-    ? [override.movetimeMs, override.nodes, override.depth].filter(v => typeof v === 'number').length
-    : 0;
-
   return (
     <>
-      <Section title={`模式 2 · 引擎选项（本档默认 UCI_Elo ${preset.options.UCI_Elo ?? '—'}）`}>
+      <Section title="引擎选项">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {PIKAFISH_STRENGTH_OPTIONS.map(spec => (
             <OptionRow
@@ -278,12 +239,9 @@ function Mode2Panel(props: {
             />
           ))}
         </div>
-        <div style={{ marginTop: 8, fontSize: 10, color: C.muted, lineHeight: 1.5 }}>
-          数值范围取自引擎自己上报的 <code>uci</code> 选项；超出范围会被夹到边界。
-        </div>
       </Section>
 
-      <Section title="模式 2 · 搜索预算">
+      <Section title="搜索预算">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {SEARCH_BUDGET_FIELDS.map(f => {
             const current = (override as unknown as Record<string, number | undefined>)?.[f.key];
@@ -300,10 +258,7 @@ function Mode2Panel(props: {
         </div>
       </Section>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <span style={{ fontSize: 10, color: C.muted }}>
-          已自定义 {overriddenCount} 个选项、{budgetOverridden} 项预算
-        </span>
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <button
           type="button"
           onClick={() => onChange(null)}
@@ -318,7 +273,7 @@ function Mode2Panel(props: {
             opacity: override ? 1 : 0.45,
           }}
         >
-          恢复本档默认
+          恢复默认
         </button>
       </div>
     </>
@@ -327,6 +282,7 @@ function Mode2Panel(props: {
 
 function Mode3Panel(props: {
   difficulty: Difficulty;
+  onDifficulty(d: Difficulty): void;
   temperature: OnnxTemperatureId;
   mateGuard: boolean;
   onTemperature(v: OnnxTemperatureId): void;
@@ -334,39 +290,35 @@ function Mode3Panel(props: {
 }) {
   return (
     <>
-      <Section title="模式 3 · 档位模型（ONNX）">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {TIER_META.map(t => {
-            const active = props.difficulty === t.tier;
+      <Section title="档位">
+        <div style={{ display: 'flex', gap: 8 }}>
+          {TIER_IDS.map(t => {
+            const active = props.difficulty === t;
             return (
-              <div
-                key={t.tier}
+              <button
+                key={t}
+                type="button"
+                onClick={() => props.onDifficulty(t as Difficulty)}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '7px 10px',
-                  borderRadius: 9,
-                  border: `1px solid ${active ? C.accent : C.border}`,
-                  backgroundColor: active ? C.accentSoft : C.surfaceAlt,
+                  flex: 1,
+                  padding: '12px 0',
+                  borderRadius: 10,
+                  border: `1px solid ${active ? C.accent : C.borderStrong}`,
+                  backgroundColor: active ? C.accentSoft : C.surface,
+                  color: active ? '#4C3418' : C.textSec,
+                  fontSize: 14,
+                  fontWeight: active ? 800 : 500,
                 }}
               >
-                <span style={{ fontWeight: 800, fontSize: 12, color: active ? '#4C3418' : C.textSec, width: 26 }}>{t.id}</span>
-                <span style={{ flex: 1, fontSize: 11, color: C.textSec }}>
-                  训练 {(t.trainRecords / 1000).toFixed(0)}k 局面
-                </span>
-                <span style={{ fontSize: 10, color: C.muted }}>top1 {(t.valTop1 * 100).toFixed(1)}%</span>
-              </div>
+                T{t}
+              </button>
             );
           })}
         </div>
-        <div style={{ marginTop: 8, fontSize: 10, color: C.muted, lineHeight: 1.5 }}>
-          模型路径 {tierModelPath(props.difficulty as TierId)}。档位差异来自训练量，<b>不代表人类段位</b>，
-          也不应宣传为「像人」。
-        </div>
+        <div style={{ marginTop: 6, fontSize: 10, color: C.muted }}>T1 最弱 · T5 最强</div>
       </Section>
 
-      <Section title="模式 3 · 选子与保护">
+      <Section title="选子">
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {TEMPERATURE_PRESETS.map(p => (
             <Choice
@@ -377,19 +329,10 @@ function Mode3Panel(props: {
             />
           ))}
         </div>
-        <div style={{ marginTop: 6, fontSize: 10, color: C.muted, lineHeight: 1.5 }}>
-          {TEMPERATURE_PRESETS.find(p => p.id === props.temperature)?.hint}
-        </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12, color: C.textSec }}>
           <input type="checkbox" checked={props.mateGuard} onChange={e => props.onMateGuard(e.target.checked)} />
-          杀棋守卫（一步杀必走 / 避免被一步杀）
+          杀棋守卫
         </label>
-        <div style={{ marginTop: 4, fontSize: 10, color: C.muted, lineHeight: 1.5 }}>
-          研究实测：仅开关此项即可带来 +90~180 Elo，无需重训。
-        </div>
-        <div style={{ marginTop: 8, fontSize: 10, color: C.muted, lineHeight: 1.5 }}>
-          该方案在 WebView 内推理（WebGPU 优先，失败回退 WASM），辅助分析不可用。
-        </div>
       </Section>
     </>
   );
@@ -406,13 +349,7 @@ function OptionRow(props: {
   const { spec, value, onChange } = props;
   const control = (() => {
     if (spec.type === 'check') {
-      return (
-        <input
-          type="checkbox"
-          checked={value === true}
-          onChange={e => onChange(e.target.checked)}
-        />
-      );
+      return <input type="checkbox" checked={value === true} onChange={e => onChange(e.target.checked)} />;
     }
     if (spec.type === 'combo') {
       return (
@@ -461,10 +398,9 @@ function OptionRow(props: {
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 12, color: C.text, fontWeight: 600 }}>{spec.name}</div>
-        <div style={{ fontSize: 10, color: C.muted }}>
-          {spec.hint}
-          {spec.type === 'spin' && spec.min !== undefined ? `（${spec.min}–${spec.max}）` : ''}
-        </div>
+        {spec.type === 'spin' && spec.min !== undefined ? (
+          <div style={{ fontSize: 10, color: C.muted }}>{spec.min}–{spec.max}</div>
+        ) : null}
       </div>
       {control}
     </div>
@@ -497,15 +433,6 @@ function Choice(props: { label: string; active: boolean; onClick(): void }) {
     >
       {props.label}
     </button>
-  );
-}
-
-function Row(props: { k: string; v: string }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-      <span style={{ color: C.muted }}>{props.k}</span>
-      <span>{props.v}</span>
-    </div>
   );
 }
 

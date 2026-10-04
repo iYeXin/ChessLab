@@ -171,16 +171,16 @@ export function getStoredSettings(): AppSettings {
 
 export const ENGINE_MODE_LABELS: Record<EngineMode, { title: string; hint: string }> = {
   1: {
-    title: '模式 1 · 搜索预算弱化（默认）',
-    hint: '用 nodes + depth 限制搜索，并在近分着法间随机；跨设备一致，不依赖引擎选项',
+    title: '模式 1 · 搜索预算（默认）',
+    hint: '按搜索量限制棋力，跨设备一致',
   },
   2: {
-    title: '模式 2 · 引擎原生棋力选项',
-    hint: '直接用 UCI_Elo / Skill Level 等引擎选项，数值可自定义，不做主机随机',
+    title: '模式 2 · 引擎棋力选项',
+    hint: '用引擎自带的棋力选项，数值可自行调节',
   },
   3: {
-    title: '模式 3 · 档位模型 T1–T5（ONNX）',
-    hint: '实验性研究产物，在 WebView 内用 WebGPU / WASM 推理，T1 最弱、T5 最强',
+    title: '模式 3 · 档位模型',
+    hint: 'T1 最弱、T5 最强',
   },
 };
 
