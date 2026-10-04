@@ -14,6 +14,8 @@ export async function createTauriTransport(profile: string): Promise<EngineTrans
   let lineHandler: ((line: string) => void) | null = null;
   let errorHandler: ((err: Error) => void) | null = null;
   let exitResolve: ((code: number | null) => void) | null = null;
+  // Last stderr lines the bridge captured before the process died.
+  let stderrTail = '';
 
   const lineEvent = `engine://line/${id}`;
   const exitEvent = `engine://exit/${id}`;
@@ -22,7 +24,8 @@ export async function createTauriTransport(profile: string): Promise<EngineTrans
     lineHandler?.(event.payload.line);
   });
 
-  const unlistenExit: UnlistenFn = await listen<{ code: number | null }>(exitEvent, event => {
+  const unlistenExit: UnlistenFn = await listen<{ code: number | null; stderr?: string }>(exitEvent, event => {
+    stderrTail = event.payload.stderr ?? '';
     exitResolve?.(event.payload.code);
     try {
       unlistenLine();
@@ -54,6 +57,9 @@ export async function createTauriTransport(profile: string): Promise<EngineTrans
     },
     get exited() {
       return exited;
+    },
+    get stderrTail() {
+      return stderrTail;
     },
     onLine(handler: (line: string) => void) {
       lineHandler = handler;

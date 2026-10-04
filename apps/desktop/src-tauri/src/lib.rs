@@ -7,7 +7,8 @@ pub fn run() {
             engines::spawn_engine,
             engines::engine_write,
             engines::engine_stop,
-            engines::engine_nnue_path
+            engines::engine_nnue_path,
+            engines::engine_stderr
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

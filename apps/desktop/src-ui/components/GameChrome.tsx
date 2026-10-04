@@ -88,14 +88,20 @@ export function StatusBanner(props: {
 
   if (props.bootError) {
     const raw = props.bootError;
-    // Friendly, user-facing text for known engine boot failures.
-    const friendly = raw.includes('timeout waiting')
-      ? '引擎启动超时，请返回重试'
-      : raw.includes('engine died') || raw.includes('process exited')
-        ? '引擎进程异常退出'
-        : raw.includes('not found')
-          ? '未找到引擎程序'
-          : raw;
+    // Friendly, user-facing text for known engine boot failures, keeping the
+    // engine's own last words (if any) so a crash is diagnosable on device.
+    const detailIdx = raw.lastIndexOf(': ');
+    const detail = detailIdx > 0 ? raw.slice(detailIdx + 2).trim() : '';
+    let friendly: string;
+    if (raw.includes('timeout waiting')) {
+      friendly = '引擎启动超时，请返回重试';
+    } else if (raw.includes('engine died') || raw.includes('process exited')) {
+      friendly = detail ? `引擎进程异常退出（${detail}）` : '引擎进程异常退出';
+    } else if (raw.includes('not found')) {
+      friendly = '未找到引擎程序';
+    } else {
+      friendly = raw;
+    }
     text = `引擎异常：${friendly}`;
     color = theme.danger;
   } else if (props.result) {

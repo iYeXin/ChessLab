@@ -70,6 +70,12 @@ export interface EngineTransport {
   kill(): void;
   /** Resolves when the underlying process exits (code may be null). */
   readonly exited: Promise<number | null>;
+  /**
+   * Last stderr lines captured before the process exited, when the transport
+   * can provide them. A dead engine's only explanation lives here (missing
+   * NNUE, rejected option, illegal instruction), so it is surfaced to the user.
+   */
+  readonly stderrTail?: string;
   onLine(handler: (line: string) => void): void;
   onIOError(handler: (err: Error) => void): void;
 }

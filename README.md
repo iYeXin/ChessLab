@@ -60,11 +60,12 @@ option name Mate Threat Depth  type spin default 1  min 0 max 10
 ```
 
 - 五个档位映射到引擎自己的 **`Skill Level`**：入门 / 业余 / 进阶 / 大师 / 特级 = **0 / 5 / 10 / 15 / 20**。
-  特意不用 `UCI_Elo`：它的下限是 1350 分，对「入门」来说太强了；`Skill Level` 0 才是引擎真正的最弱设置。
+  特意不用 `UCI_Elo` 当主旋钮：它的下限是 1350 分，对「入门」来说太强了；`Skill Level` 0 才是引擎真正的最弱设置。
 - **选项值可自定义**：模态框列出真正影响棋力的选项（带范围校验，越界值夹到边界）以及搜索预算（思考时间 / 节点上限 / 深度上限）。改动**按档位持久化**，可一键「恢复默认」。
+- **`UCI_Elo` 作为可选槽位保留**：默认不发送，留空即不生效；自行填入数值后会自动开启 `UCI_LimitStrength`（否则引擎会忽略 Elo）。
 - 本模式**不做主机侧随机**：同一局面 + 同一组选项，永远给出同一着法。
 
-> 引擎上报但**不影响棋力**的选项被刻意移除，不做成摆设控件：`UCI_Elo` / `UCI_LimitStrength`（Elo 下限偏强）、`MultiPV`（本模式走 bestmove，无效果）、`Slow Mover` / `Move Overhead` / `nodestime`（只在时间制下生效，这里用固定 movetime/nodes）、`Threads` / `Hash`（资源而非棋力）、`Sixty Move Rule` / `Repetition Rule` / `Repetition Fold`（裁决规则）、`UCI_ShowWDL`（输出格式）。
+> 引擎上报但**不影响棋力**的选项被刻意移除，不做成摆设控件：`MultiPV`（本模式走 bestmove，无效果）、`Slow Mover` / `Move Overhead` / `nodestime`（只在时间制下生效，这里用固定 movetime/nodes）、`Threads` / `Hash`（资源而非棋力）、`Sixty Move Rule` / `Repetition Rule` / `Repetition Fold`（裁决规则）、`UCI_ShowWDL`（输出格式）。
 
 ### 模式 3 · 档位模型 T1–T5（ONNX）
 

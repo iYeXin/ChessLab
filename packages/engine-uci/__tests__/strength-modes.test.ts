@@ -4,6 +4,7 @@ import {
   PIKAFISH_PROFILE,
   PIKAFISH_STRENGTH_OPTIONS,
   PIKAFISH_VERSION,
+  defaultPresetOptions,
   engineOptionPresetForLevel,
   engineOptionsStrategy,
   getProfile,
@@ -20,16 +21,23 @@ describe('Pikafish profile', () => {
     expect(Object.keys(ENGINE_PROFILES)).toEqual(['pikafish']);
   });
 
-  it('exposes only options that change playing strength', () => {
-    // Kept: the strength knob and the mate-threat search depth.
+  it('exposes strength-relevant options, with UCI_Elo as an opt-in slot', () => {
+    // Kept: the strength knob, the mate-threat search depth, and an optional
+    // Elo slot the tester can fill in.
     expect(strengthOptionSpec('Skill Level')).toMatchObject({ type: 'spin', min: 0, max: 20 });
     expect(strengthOptionSpec('Mate Threat Depth')).toMatchObject({ type: 'spin', min: 0, max: 10 });
+    expect(strengthOptionSpec('UCI_Elo')).toMatchObject({
+      type: 'spin',
+      min: 1350,
+      max: 2850,
+      optional: true,
+    });
+    // Optional slots never join the default preset.
+    expect(defaultPresetOptions().map(o => o.name)).toEqual(['Skill Level', 'Mate Threat Depth']);
 
-    // Removed on purpose (see the table's doc comment): an Elo scale whose floor
-    // is far too strong for 入门, plus everything that cannot affect the move
-    // under this app's fixed search limits.
+    // Removed on purpose (see the table's doc comment): everything that cannot
+    // affect the move under this app's fixed search limits.
     for (const gone of [
-      'UCI_Elo',
       'UCI_LimitStrength',
       'MultiPV',
       'Slow Mover',
@@ -98,12 +106,25 @@ describe('mode 2 — Skill Level mapping', () => {
     expect(mode2SkillForLevel(999)).toBe(20);
   });
 
-  it('plans Skill Level and nothing Elo-shaped', () => {
+  it('plans Skill Level and no Elo unless the user opts in', () => {
     const { options } = engineOptionPresetForLevel(10);
     expect(options['Skill Level']).toBe(10);
     expect(options.MultiPV).toBe(1);
-    expect(options.UCI_LimitStrength).toBeUndefined();
     expect(options.UCI_Elo).toBeUndefined();
+    expect(options.UCI_LimitStrength).toBeUndefined();
+  });
+
+  it('auto-enables UCI_LimitStrength when the user sets UCI_Elo', () => {
+    // The engine ignores UCI_Elo unless limiting is on, so we switch it on
+    // rather than shipping a control that silently does nothing.
+    const { options } = engineOptionPresetForLevel(10, undefined, { options: { UCI_Elo: 1800 } });
+    expect(options.UCI_Elo).toBe(1800);
+    expect(options.UCI_LimitStrength).toBe(true);
+    // An explicit choice is respected.
+    const off = engineOptionPresetForLevel(10, undefined, {
+      options: { UCI_Elo: 1800, UCI_LimitStrength: false },
+    });
+    expect(off.options.UCI_LimitStrength).toBe(false);
   });
 
   it('stays deterministic (no host-side randomisation)', () => {

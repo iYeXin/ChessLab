@@ -31,7 +31,7 @@
 | 移动端 | Tauri 2 Android（Rust 交叉编译 + Gradle） | 需 Android NDK；`gen/android` 工程 |
 | 包管理 | pnpm workspace | `apps/*` + `packages/*` |
 | 状态 / 样式 | React hooks + CSS variables | 不引入重状态库 |
-| 引擎 | Pikafish 2023-03-05（GPL-3.0，独立进程） | 版本与下载地址固定在 `scripts/fetch-engines.ps1`；此版本仍提供 `UCI_Elo` / `Skill Level` |
+| 引擎 | Pikafish 2023-03-05（GPL-3.0，独立进程） | 版本与下载地址固定在 `scripts/fetch-engines.ps1`；此版本仍提供 `Skill Level`（模式 2 的旋钮） |
 | 规则内核 | vendored xiangqi.js（BSD-2）+ 自维护长将裁决 | 不依赖引擎做合法性校验（引擎缺失也能玩） |
 | 模型推理 | onnxruntime-web 1.30（WebGPU → WASM） | 仅模式 3；纯 TS 编码层在 `packages/engine-onnx`，可在 Node 下单测 |
 | 测试 | Vitest（12 套件 / 116 用例） | 纯逻辑包在 Node 下可测 |
@@ -170,9 +170,19 @@ interface EngineTurnStrategy {
 因此新增方案不需要改动 runner、会话或界面。
 
 **策略是「按方」解析的**：`EngineRunnerFactory` 的入参带 `side`，`makeSessionFactories()`
-在每次建 runner 时用 `modeFor(side)` 决定该方用哪套方案。观战模式双方各持一个独立
-runner，所以红黑可以**异构**（红方模式 1、黑方模式 3 等）；辅助分析只要有任一方是
-UCI 引擎就可用。
+在每次建 runner 时决定该方用哪套方案。观战模式双方各持一个独立 runner，所以红黑可以**异构**
+（红方模式 1、黑方模式 3 等）。
+
+> **踩过的坑（务必保持）**：不能用「观战红黑方案缺省时回落全局模式」的写法。观战的
+> `engineModeWhite/Black` 有默认值 1，一旦无条件传进工厂，人机模式下引擎执黑就会取到
+> `engineModeBlack = 1`，**把玩家选的 `engineMode` 静默丢掉**——表现为「选了模式 3 仍启动
+> Pikafish」，在安卓上直接变成引擎报错。因此 `SessionEngineConfig` 用显式的
+> `watchModes?: { white, black }`，**只有观战传**；解析逻辑在零依赖的
+> `apps/desktop/src-ui/state/engine-mode-plan.ts`，并有回归单测（`vitest.config.ts` 的
+> include 已扩到 `apps/desktop/src-ui/**`，否则这类应用层回归测不到）。
+
+辅助分析按 `isOnnxOnly(双方模式)` 判定：只有**双方都是模式 3** 时才不提供，否则异构时
+红方是 UCI 也会丢掉分析能力。
 
 | 模式 | 策略 | 做法 | 随机 |
 |---|---|---|---|
@@ -195,7 +205,8 @@ Pikafish **2023-03-05 是最后一个提供 `Skill Level` 的版本**，所以�
 
 选项表 `PIKAFISH_STRENGTH_OPTIONS` 只保留**真正影响棋力**的项（`Skill Level`、
 `Mate Threat Depth`），其余引擎上报项刻意剔除，避免做成摆设控件——判据与清单见
-`packages/engine-uci/src/profiles.ts` 的表注释。
+`packages/engine-uci/src/profiles.ts` 的表注释。`UCI_Elo` 保留为 `optional: true` 的
+**可选槽位**：默认不发送，用户填了才发，且会自动开启 `UCI_LimitStrength`（否则引擎忽略 Elo）。
 
 **模式 3 · ONNX 档位模型**
 
@@ -206,6 +217,29 @@ Pikafish **2023-03-05 是最后一个提供 `Skill Level` 的版本**，所以�
 ### 5.5 完整历史透传
 
 发送 `position fen <起始> moves <全程>` 而非裸 FEN，消除引擎「重复盲」：引擎能正确评估重复与长将惩罚，皮卡鱼内置亚洲规则长将评分亦能生效。
+
+### 5.6 安卓上的引擎进程
+
+三件事必须同时成立，否则表现为「引擎进程异常退出」：
+
+1. **可执行文件位置**：Android 10+ 禁止从应用可写目录 `exec()`（W^X），但允许从
+   `nativeLibraryDir` 执行。所以引擎以 `jniLibs/arm64-v8a/libpikafish.so` 形式随包，
+   并在 `build.gradle.kts` 里 `useLegacyPackaging = true` 保证安装时**解压到磁盘**。
+2. **CPU 变体**：只取 **`pikafish-armv8`**（通用），不取 `pikafish-armv8-dotprod`——
+   后者在缺少 ARMv8.2 FEAT_DotProd 的 CPU 上 **SIGILL** 秒退。棋力受限的对手用不着那点速度。
+3. **NNUE**：Pikafish 是 NNUE-only，加载失败会 `exit(1)`。net **不能**依赖
+   「`lib/` 下非 ELF 文件也会被解出来」这一未获 Android 保证的行为，因此：
+   - **arm64 单架构包**：net 作为**前端资源**（`public/pikafish.nnue`，build.js 临时搬运），
+     运行时 `android_nnue()` 按「已落盘副本 → jniLibs → 内嵌资源」的顺序落盘为
+     `app_data_dir()/engines/pikafish.nnue`，并以该目录作为引擎 cwd（Pikafish 默认会在 cwd
+     找 `pikafish.nnue`，多一层保险）。
+   - **通用包**：前端资源会被**每个 ABI 各嵌一份**（4 份 = +52 MB），所以通用包改回
+     jniLibs 单份拷贝，代价是依赖上面的解压行为。
+   - `nnue_path()` 一律做 **≥15 MB 有效性校验**；真实 net 是 18,070,595 字节。
+
+**可观测性**：`engines.rs` 保留每个引擎最后 30 行 stderr，随 `engine://exit/<id>` 一起上报，
+驱动把最后一行并入错误信息，界面显示「引擎进程异常退出（<引擎原话>）」；另有
+`engine_stderr` 命令。没有这层，安卓上的引擎崩溃就是个黑盒（本次踩坑即是如此）。
 
 ---
 
@@ -251,9 +285,9 @@ Pikafish **2023-03-05 是最后一个提供 `Skill Level` 的版本**，所以�
 |---|---|---|
 | 类型检查（全仓 + 应用） | `pnpm typecheck`、`npx tsc --noEmit`（apps/desktop） | 通过 |
 | Rust 构建 | `cargo check`（apps/desktop/src-tauri） | 通过 |
-| 单元测试 | `pnpm test` | **12 套件 / 116 用例全绿** |
+| 单元测试 | `pnpm test` | **14 套件 / 137 用例全绿**（含 `apps/desktop/src-ui` 应用层） |
 | 真实引擎链路 | `pnpm smoke:engines` | 握手 → EvalFile → 搜索 → 合法着法校验通过 |
-| 模式 2 原生选项 | `pnpm smoke:engines` | 确认上报 `UCI_LimitStrength` / `UCI_Elo 1350..2850` / `Skill Level 0..20`，两个极端 Elo 各搜索一次且着法合法 |
+| 模式 2 原生选项 | `pnpm smoke:engines` | 确认上报 `Skill Level 0..20`，并用**出厂预设**在两端各搜索一次：skill 0 / skill 20 均给出合法着法 |
 | perft 对拍 | `pnpm probe:perft 4 --divide` | 与 2023-03-05 逐根着法完全一致 |
 | 前端生产构建 | `pnpm build:frontend` | 通过（含 ONNX 模式） |
 
@@ -270,7 +304,7 @@ Pikafish **2023-03-05 是最后一个提供 `Skill Level` 的版本**，所以�
 | 残局 `solution` 仅参考 | 早期注释称「基本杀法 · 单步可解」，实测并非单步杀着；已更正注释 | 如需严格答案需引擎重新校验 |
 | 模式 3 无辅助分析 | 模型只出 policy + value，没有可加深的 MultiPV 流 | 可用 top-N 概率自行渲染分析条（需扩展 `AssistLine`） |
 | 模式 3 资产体积 | 模型 23.2 MB + onnxruntime 运行时 40.6 MB；Vite 还会额外 emit 一份它静态引用的 WebGPU wasm | 可改为按需下载 / 只保留一套 wasm |
-| 模式 2 与引擎版本绑定 | 只有 ≤ 2023-03-05 的 Pikafish 提供 `Skill Level` / `UCI_Elo` | 换引擎时同步更新 `PIKAFISH_STRENGTH_OPTIONS` |
+| 模式 2 与引擎版本绑定 | 只有 ≤ 2023-03-05 的 Pikafish 提供 `Skill Level` | 换引擎时同步更新 `PIKAFISH_STRENGTH_OPTIONS` |
 | `images/` 截图 | 首页与设置页布局已变，设置页 / 残局页截图已移除待补拍；难度模态框尚无截图 | 补拍后写回 README |
 | 截图自动化 | `scripts/screenshot-window.ps1` / `click-window.ps1` 依赖 `Get-Process ... MainWindowHandle` 取窗口，可能命中 Tauri 的辅助隐藏窗口而拍出无效图 | 改为按窗口标题枚举（`EnumWindows`）后再截图 |
 | **APK 体积 143 MB** | 见 §10：4 个 ABI 各嵌一份完整前端 | 已默认额外产出 **arm64-v8a 单架构包（≈51 MB）**；通用包仍保留 |

@@ -6,8 +6,10 @@
 #   - enable legacy packaging so it is EXTRACTED to disk at install time
 #   - at runtime exec <nativeLibraryDir>/lib<name>.so
 #
-# Pikafish's NNUE file rides along the same way (as libpikafish_nnue.so):
-# nativeLibraryDir is a readable directory, so EvalFile can point there.
+# The NNUE does NOT ride along this way: it is a raw data blob, and Android only
+# guarantees extraction of real ELF objects from lib/. It travels as a frontend
+# asset instead (`apps/desktop/public/pikafish.nnue`, staged by build.js) and the
+# Rust side materialises it into the app data dir as `pikafish.nnue`.
 #
 # NOTE: `node build.js` performs the same sync inline before building, so this
 # script is the manual/standalone entry point (`pnpm sync:jniLibs`).
@@ -23,13 +25,17 @@ if (-not (Test-Path $Engines)) {
 New-Item -ItemType Directory -Force -Path $Jni | Out-Null
 
 $pf = Join-Path $Engines "libpikafish.so"
-$nnue = Join-Path $Engines "pikafish.nnue"
 
 if (Test-Path $pf) { Copy-Item $pf (Join-Path $Jni "libpikafish.so") -Force; Write-Host "copied libpikafish.so" }
 else { Write-Warning "missing $pf" }
 
-if (Test-Path $nnue) { Copy-Item $nnue (Join-Path $Jni "libpikafish_nnue.so") -Force; Write-Host "copied libpikafish_nnue.so" }
-else { Write-Warning "missing $nnue (Pikafish will need EvalFile set another way)" }
+# Drop a stale NNUE copy from older layouts: it costs 17 MB in every APK and the
+# runtime no longer reads it.
+$staleNnue = Join-Path $Jni "libpikafish_nnue.so"
+if (Test-Path $staleNnue) { Remove-Item $staleNnue -Force; Write-Host "removed stale libpikafish_nnue.so" }
+
+Write-Host ""
+Write-Host "Remember: gen/android/app/build.gradle.kts needs packaging { jniLibs { useLegacyPackaging = true } }"
 
 Write-Host ""
 Write-Host "Remember: gen/android/app/build.gradle.kts needs packaging { jniLibs { useLegacyPackaging = true } }"

@@ -35,21 +35,13 @@ export function PuzzleScreen(props: {
   const factories = useMemo(
     () =>
       makeSessionFactories({
+        // 残局 is a single-engine-opponent mode: no per-side plan.
         engineMode: settings.engineMode,
-        engineModeWhite: settings.engineModeWhite,
-        engineModeBlack: settings.engineModeBlack,
         mode2: settings.mode2,
         onnxTemperature: settings.onnxTemperature,
         onnxMateGuard: settings.onnxMateGuard,
       }),
-    [
-      settings.engineMode,
-      settings.engineModeWhite,
-      settings.engineModeBlack,
-      settings.mode2,
-      settings.onnxTemperature,
-      settings.onnxMateGuard,
-    ],
+    [settings.engineMode, settings.mode2, settings.onnxTemperature, settings.onnxMateGuard],
   );
 
   const { state, actions, sessionRef } = useGameSession({

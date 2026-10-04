@@ -27,17 +27,22 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
   const [gameKey, setGameKey] = useState(1);
   const [showResult, setShowResult] = useState(false);
   const [showFullHistory, setShowFullHistory] = useState(false);
+  const isWatch = cfg.mode === 'eve';
   const factories = useMemo(
     () =>
       makeSessionFactories({
         engineMode: settings.engineMode,
-        engineModeWhite: settings.engineModeWhite,
-        engineModeBlack: settings.engineModeBlack,
+        // Only 观战 gets per-side modes; otherwise the single engine opponent
+        // must follow the mode the player actually chose.
+        ...(isWatch
+          ? { watchModes: { white: settings.engineModeWhite, black: settings.engineModeBlack } }
+          : {}),
         mode2: settings.mode2,
         onnxTemperature: settings.onnxTemperature,
         onnxMateGuard: settings.onnxMateGuard,
       }),
     [
+      isWatch,
       settings.engineMode,
       settings.engineModeWhite,
       settings.engineModeBlack,

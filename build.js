@@ -9,7 +9,7 @@
 // The Android signing key is a throwaway self-signed cert, generated on first
 // build and gitignored. Override the credentials via env for a real release.
 import { spawnSync, execSync } from 'node:child_process';
-import { existsSync, mkdirSync, cpSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, cpSync, readdirSync, statSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { stageEngines, enginesStaged } from './scripts/stage-engines.mjs';
@@ -125,16 +125,24 @@ if (wantAndroid) {
     run(`keytool -genkeypair -v -keystore "${ksPath}" -storetype JKS -alias ${ANDROID_KEY_ALIAS} -keyalg RSA -keysize 2048 -validity 9125 -storepass ${ANDROID_KEYSTORE_PASSWORD} -keypass ${ANDROID_KEY_PASSWORD} -dname "CN=${productName},OU=Dev,O=${productName},C=CN"`);
   }
 
-  // Ensure jniLibs (Tauri gen may be re-created on clean)
+  // Ensure jniLibs (Tauri gen may be re-created on clean).
+  // NOTE: only the engine *executable* goes here — Android cannot exec from the
+  // writable app dir, so it must live in nativeLibraryDir. The engine is
+  // arm64-only (Pikafish publishes no armv7/x86 Android builds), so those ABIs in
+  // the universal APK cannot run modes 1/2.
+  //
+  // The NNUE is NOT shipped here: it is a raw data blob, and Android only
+  // guarantees extraction of real ELF objects under lib/. It travels as a
+  // frontend asset instead (staged below) and is materialised into the app data
+  // dir by `android_nnue` in src-tauri/src/engines.rs.
   const jniDir = join(root, 'apps/desktop/src-tauri/gen/android/app/src/main/jniLibs/arm64-v8a');
-  if (!existsSync(join(jniDir, 'libpikafish.so'))) {
-    log('Syncing jniLibs ...');
-    mkdirSync(jniDir, { recursive: true });
+  {
     const srcDir = join(root, 'third_party/engines/android-arm64');
     if (existsSync(join(srcDir, 'libpikafish.so'))) {
+      // Always copy: a re-fetched engine (e.g. a different CPU variant) must
+      // actually take effect instead of being shadowed by a stale jniLibs file.
+      mkdirSync(jniDir, { recursive: true });
       cpSync(join(srcDir, 'libpikafish.so'), join(jniDir, 'libpikafish.so'));
-      // nnue as lib for nativeLibraryDir
-      cpSync(join(srcDir, 'pikafish.nnue'), join(jniDir, 'libpikafish_nnue.so'));
       log('jniLibs synced');
     } else {
       log('WARN: third_party/engines/android-arm64 not found — run pnpm fetch:engines first');
@@ -148,6 +156,43 @@ if (wantAndroid) {
     TAURI_ANDROID_KEY_ALIAS: ANDROID_KEY_ALIAS,
     TAURI_ANDROID_KEY_PASSWORD: ANDROID_KEY_PASSWORD,
   };
+
+  // The engine needs its NNUE as a real, readable file named `pikafish.nnue`.
+  //
+  // Two delivery routes, chosen per artifact:
+  //   - arm64-only APK  -> embedded frontend asset (materialised into the app
+  //     data dir by `android_nnue`). Robust: it does not depend on Android
+  //     extracting a non-ELF blob out of lib/.
+  //   - universal APK   -> `libpikafish_nnue.so` in jniLibs. A frontend asset is
+  //     embedded into EVERY abi's Rust library, so the net would be duplicated
+  //     4x (+52 MB); jniLibs keeps it to one copy.
+  const publicNnue = join(root, 'apps/desktop/public/pikafish.nnue');
+  const nnueSrc = join(root, 'third_party/engines/android-arm64/pikafish.nnue');
+  const jniNnue = join(jniDir, 'libpikafish_nnue.so');
+
+  function stageNnueAsset(on) {
+    if (on) {
+      if (existsSync(nnueSrc)) {
+        cpSync(nnueSrc, publicNnue);
+        log('Staged pikafish.nnue into public/ (embedded asset)');
+      } else {
+        log('WARN: third_party/engines/android-arm64/pikafish.nnue missing — engine will have no net');
+      }
+    } else {
+      rmSync(publicNnue, { force: true });
+    }
+  }
+
+  function stageNnueLib(on) {
+    if (on) {
+      if (existsSync(nnueSrc)) {
+        cpSync(nnueSrc, jniNnue);
+        log('Staged libpikafish_nnue.so into jniLibs (single copy)');
+      }
+    } else {
+      rmSync(jniNnue, { force: true });
+    }
+  }
 
   // Gradle always writes to apk/universal/release, whatever the target set is,
   // so sign immediately after each build.
@@ -188,7 +233,10 @@ if (wantAndroid) {
     return signedOut;
   }
 
-  // 1) universal: every ABI, plus the AAB for store delivery
+  // 1) universal: every ABI, plus the AAB for store delivery.
+  //    The net rides in jniLibs here to keep it to a single copy.
+  stageNnueAsset(false);
+  stageNnueLib(true);
   buildAndroidApk([], 'universal');
   const aabIn = join(root, 'apps/desktop/src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab');
   if (existsSync(aabIn)) {
@@ -197,12 +245,19 @@ if (wantAndroid) {
     log(`Android AAB → ${aabOut} (${(statSync(aabOut).size / 1024 / 1024).toFixed(1)} MB)`);
   }
 
-  // 2) arm64-v8a only: the engine's only supported ABI, roughly a third the size
+  // 2) arm64-v8a only: the engine's only supported ABI, roughly a third the size.
+  //    The net travels as an embedded asset so it cannot be lost to lib/ filtering.
   if (wantArm64Only) {
+    stageNnueLib(false);
+    stageNnueAsset(true);
     buildAndroidApk(['aarch64'], 'arm64');
   } else {
     log('Skipping arm64-v8a-only APK (--no-arm64)');
   }
+
+  // Clean up whatever is left staged.
+  stageNnueAsset(false);
+  stageNnueLib(false);
 }
 
 log(`\nDone. Artifacts in ${distDir}:`);

@@ -17,6 +17,7 @@ import type {
 } from '@chessnext/game-session';
 import type { Side } from '@chessnext/rules-core';
 import { XiangqiRules } from '@chessnext/rules-xiangqi';
+import { isOnnxOnly, resolveSideModes, type WatchModePlan } from './engine-mode-plan';
 import { createTauriTransport } from '../transport/tauri';
 import { tierForLevel } from './difficulty';
 import { getTierSession } from './onnx';
@@ -104,14 +105,15 @@ function overrideLimits(o: Mode2LevelOverride): GoLimits | undefined {
 }
 
 export interface SessionEngineConfig {
-  /** 人机 / 残局用的棋力方案。 */
+  /** 人机 / 残局：单一引擎对手的棋力方案。 */
   engineMode: EngineMode;
   /**
-   * 观战模式：红方 / 黑方各自的棋力方案，可**异构**。
-   * 缺省时回落到 `engineMode`。
+   * 观战模式：红黑各自的棋力方案，可**异构**。
+   *
+   * 只有观战才传。人机 / 残局必须留空，否则这里的（默认 1）会盖掉
+   * `engineMode` —— 曾经因此让「模式 3」的人机对局照样启动 Pikafish。
    */
-  engineModeWhite?: EngineMode;
-  engineModeBlack?: EngineMode;
+  watchModes?: WatchModePlan;
   /** Mode 2 per-level custom values, keyed by engine level. */
   mode2?: Mode2Overrides;
   /** Mode 3 move-choice temperature preset. */
@@ -135,8 +137,8 @@ export function makeSessionFactories(cfg: SessionEngineConfig): {
   engineRunnerFactory: EngineRunnerFactory;
   analysisFactory?: AssistEngineFactory;
 } {
-  const modeFor = (side: Side): EngineMode =>
-    side === 'w' ? (cfg.engineModeWhite ?? cfg.engineMode) : (cfg.engineModeBlack ?? cfg.engineMode);
+  const sideModes = resolveSideModes(cfg.engineMode, cfg.watchModes);
+  const modeFor = (side: Side): EngineMode => (side === 'w' ? sideModes.w : sideModes.b);
 
   const createOnnx = async (strengthLevel: number): Promise<EngineTurnRunner> => {
     const tier = tierForLevel(strengthLevel);
@@ -161,8 +163,7 @@ export function makeSessionFactories(cfg: SessionEngineConfig): {
   };
 
   // Assist needs a UCI engine, so it is available unless EVERY side is ONNX.
-  const modes = [cfg.engineMode, cfg.engineModeWhite ?? cfg.engineMode, cfg.engineModeBlack ?? cfg.engineMode];
-  if (modes.every(m => m === 3)) return { engineRunnerFactory };
+  if (isOnnxOnly([sideModes.w, sideModes.b])) return { engineRunnerFactory };
 
   return {
     engineRunnerFactory,

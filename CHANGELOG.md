@@ -11,6 +11,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/
 
 **实验性 / 研究性分支**：由双棋种应用裁剪为**单一棋种（中国象棋）**，修复上一版遗留的一批缺陷，并加入**三套棋力方案**与**测试人员模式**。
 
+### Fixed — 第三轮（真机反馈）
+
+- **【严重】人机 / 残局选了「模式 3」仍然启动 Pikafish（本人引入的回归）**
+  - 根因：观战的红黑方案（`engineModeWhite` / `engineModeBlack`，默认 1）被无条件传进 `makeSessionFactories()`，而该函数按“方”解析模式。人机模式下引擎执黑，于是取到 `engineModeBlack = 1`，**玩家选的 `engineMode` 被静默丢弃**。三套方案在人机下都走同一条 UCI 路径，因此在安卓上“每个模式”都报同一个引擎错误，ONNX 也不会生效。
+  - 修法：`SessionEngineConfig` 用显式的 `watchModes?: { white, black }` 取代两个可选字段——**只有观战才传**；非观战一律用 `engineMode`。解析逻辑抽到零依赖模块 `state/engine-mode-plan.ts`。
+  - 顺带修掉同源问题：模式 3 下 `engineModeWhite/Black` 的默认值会让 `analysisFactory` 仍然存在（辅助分析会去拉 UCI 引擎）。现在按 `isOnnxOnly(双方模式)` 判定，模式 3 下不再提供辅助分析，也不会生成任何引擎进程。
+  - **新增应用层单测**：`vitest.config.ts` 的 include 之前只覆盖 `packages/**`，所以这类应用层回归测不到；现已纳入 `apps/desktop/src-ui/**`，并加了 `resolveSideModes` / `isOnnxOnly` 的回归用例（含「人机模式 3 必须解析为 ONNX」）。
+- **安卓引擎进程退出无从诊断**：`engines.rs` 之前把引擎 stderr 读进黑洞，进程一死只剩「引擎进程异常退出」。现在保留最后 30 行 stderr，并随 `engine://exit/<id>` 事件一起上报；驱动把最后一行拼进错误信息，界面显示为「引擎进程异常退出（<引擎原话>）」，另加 `engine_stderr` 命令供诊断页使用。
+- **安卓引擎改用通用 armv8 构建**：原先优先取 `pikafish-armv8-dotprod`，它在缺少 ARMv8.2 FEAT_DotProd 的 CPU 上会 **SIGILL** 秒退。改为优先 `pikafish-armv8`（dotprod 仅作兜底），棋力受限的对手用不着那点速度。
+- **安卓 NNUE 交付方式**：net 以 `libpikafish_nnue.so` 混进 `jniLibs` 依赖「Android 会把 `lib/` 下的非 ELF 文件也解出来」这一未获保证的行为；Pikafish 是 NNUE-only，取不到 net 会直接 `exit(1)`（正是「引擎进程异常退出」）。现在
+  - arm64 包：net 作为**前端资源**随包，运行时由 `android_nnue()` 落盘成 `app_data_dir()/engines/pikafish.nnue`（先查已落盘副本 → jniLibs → 内嵌资源），并以该目录作为引擎 cwd，使 Pikafish 自身的默认查找也能命中；
+  - 通用包：仍走 jniLibs 单份拷贝（前端资源会被**每个 ABI 各嵌一份**，通用包里就是 4 份 +52 MB）；
+  - `nnue_path()` 增加 **≥15 MB 有效性校验**，绝不把残缺文件交给引擎。
+- **构建脚本陈旧文件陷阱**：`build.js` 原先「jniLibs 里已有 `libpikafish.so` 就跳过同步」，导致重新 fetch 引擎（换 CPU 变体）不生效；现在每次都同步。
+
+### Changed — 第三轮
+
+- **模式 2 改用 `Skill Level` 而非 `UCI_Elo`**（Elo 下限 1350 对「入门」太强）：五档 = **0 / 5 / 10 / 15 / 20**，`mode2SkillForLevel()` 精确锚定，`Skill Level 0` 才是引擎真正的最弱设置。
+- **模式 2 选项表精简为「真正影响棋力」的项**：保留 `Skill Level`、`Mate Threat Depth`；移除 `MultiPV`（本模式走 bestmove，纯摆设）、`Slow Mover` / `Move Overhead` / `nodestime`（只在时间制下生效）、`Threads` / `Hash`（资源非棋力）、`Sixty Move Rule` / `Repetition Rule` / `Repetition Fold`（裁决）、`UCI_ShowWDL`（输出格式）。
+- **`UCI_Elo` 作为「可选槽位」保留**：默认不发送，编辑器里留出位置由用户自行填写（留空即不发）；填写后自动开启 `UCI_LimitStrength`（否则引擎会忽略 Elo）。`StrengthOptionSpec` 新增 `optional`，`defaultPresetOptions()` 只含非可选项。
+- `EngineProfile` 去掉已无用的 `supportsLimitStrength` / `supportsSkillLevel`。
+- 安卓产物：**arm64 单架构包 50.9 MB**（推荐）/ 通用包 143.0 MB / AAB 143.7 MB，均签名 v2+v3。
+
 ### Added — 三套棋力方案（第二轮）
 
 - **`EngineTurnStrategy` 抽象缝**（`packages/engine-uci`）：`TurnPlan { options, spec }`，runner 只按策略下发的选项与搜索限制执行，因此同一 runner 可服务所有模式

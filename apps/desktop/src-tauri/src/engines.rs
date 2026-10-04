@@ -25,6 +25,82 @@ fn registry() -> Registry {
 
 static NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
 
+/// Last stderr lines per engine id. Without this a dead engine is a black box:
+/// Pikafish explains itself on stderr (missing net, bad option, SIGILL trap).
+type StderrLog = Arc<Mutex<HashMap<u32, Vec<String>>>>;
+
+fn stderr_log() -> StderrLog {
+    static LOG: std::sync::OnceLock<StderrLog> = std::sync::OnceLock::new();
+    LOG.get_or_init(|| Arc::new(Mutex::new(HashMap::new()))).clone()
+}
+
+const STDERR_KEEP_LINES: usize = 30;
+
+// ---------------------------------------------------------------------------
+// NNUE network file
+// ---------------------------------------------------------------------------
+
+/// Pikafish is NNUE-only: if it cannot load the network it prints an error and
+/// calls `exit(EXIT_FAILURE)`, which surfaces as「引擎进程异常退出」. The real net
+/// is ~17 MB (18,070,595 bytes for the 2023-03-05 build), so anything much
+/// smaller is a broken/placeholder file and must not be handed to the engine.
+const MIN_NNUE_BYTES: u64 = 15_000_000;
+
+fn net_is_valid(p: &std::path::Path) -> bool {
+    std::fs::metadata(p)
+        .map(|m| m.is_file() && m.len() >= MIN_NNUE_BYTES)
+        .unwrap_or(false)
+}
+
+/// Android: hand the engine a real file named `pikafish.nnue` under the app data
+/// dir (which also becomes its cwd, so Pikafish's own default lookup succeeds).
+///
+/// The `libpikafish_nnue.so`-in-jniLibs trick cannot be relied on: Android only
+/// guarantees extraction of entries under `lib/` that are actual ELF objects, and
+/// the net is a raw data blob. So fall back to the embedded frontend asset.
+#[cfg(target_os = "android")]
+fn android_nnue(app: &AppHandle) -> Option<std::path::PathBuf> {
+    let dest = app
+        .path()
+        .app_data_dir()
+        .ok()?
+        .join("engines")
+        .join("pikafish.nnue");
+    if net_is_valid(&dest) {
+        return Some(dest);
+    }
+
+    let write_dest = |bytes_from: &dyn Fn() -> Option<Vec<u8>>| -> Option<()> {
+        let bytes = bytes_from()?;
+        if bytes.len() as u64 >= MIN_NNUE_BYTES {
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent).ok()?;
+            }
+            std::fs::write(&dest, &bytes).ok()?;
+            if net_is_valid(&dest) {
+                return Some(());
+            }
+        }
+        None
+    };
+
+    // 1) jniLibs copy, when the installer did extract it
+    if let Some(dir) = get_android_native_library_dir() {
+        let src = dir.join("libpikafish_nnue.so");
+        if net_is_valid(&src) && write_dest(&|| std::fs::read(&src).ok()).is_some() {
+            return Some(dest);
+        }
+    }
+
+    // 2) embedded frontend asset (staged into public/ by build.js)
+    let resolver = app.asset_resolver();
+    if write_dest(&|| resolver.get("pikafish.nnue".to_string()).map(|a| a.bytes().to_vec())).is_some() {
+        return Some(dest);
+    }
+
+    None
+}
+
 // ---------------------------------------------------------------------------
 // Binary resolution
 // ---------------------------------------------------------------------------
@@ -241,19 +317,14 @@ fn get_android_native_library_dir() -> Option<std::path::PathBuf> {
 fn nnue_path(app: &AppHandle) -> Option<std::path::PathBuf> {
     #[cfg(target_os = "android")]
     {
-        if let Some(native_dir) = get_android_native_library_dir() {
-            // We package nnue as libpikafish_nnue.so in jniLibs
-            for name in ["libpikafish_nnue.so", "pikafish.nnue"] {
-                let p = native_dir.join(name);
-                if p.exists() {
-                    return Some(p);
-                }
-            }
+        // Materialised copy under the app data dir (see android_nnue).
+        if let Some(p) = android_nnue(app) {
+            return Some(p);
         }
     }
     if let Ok(resource_dir) = app.path().resource_dir() {
         let p: std::path::PathBuf = resource_dir.join("engines").join("pikafish.nnue");
-        if p.exists() {
+        if net_is_valid(&p) {
             return Some(p);
         }
     }
@@ -319,32 +390,52 @@ pub fn spawn_engine(app: AppHandle, profile: String) -> Result<u32, String> {
     #[cfg(windows)]
     cmd.creation_flags(0x08000000);
 
-    // Ensure Pikafish can find its NNUE via absolute path if needed;
-    // the JS layer will also send `setoption name EvalFile` explicitly.
-    // Setting it as cwd has no effect, but we ensure the working dir is the
-    // engine's directory so relative paths (if any) resolve.
-    if let Some(parent) = bin.parent() {
-        cmd.current_dir(parent);
+    // Pikafish looks for `pikafish.nnue` in its working directory when EvalFile
+    // is not set, so prefer the directory that actually holds a valid net. The
+    // JS layer still sends `setoption name EvalFile` with the absolute path.
+    let net_dir = nnue_path(&app).and_then(|p| p.parent().map(|d| d.to_path_buf()));
+    match net_dir.or_else(|| bin.parent().map(|d| d.to_path_buf())) {
+        Some(dir) => {
+            cmd.current_dir(&dir);
+        }
+        None => {}
     }
 
     let mut child = cmd.spawn().map_err(|e| format!("failed to spawn {}: {}", bin.display(), e))?;
 
     let stdin = child.stdin.take().ok_or("failed to open stdin")?;
     let stdout = child.stdout.take().ok_or("failed to open stdout")?;
-    let mut stderr = child.stderr.take().ok_or("failed to open stderr")?;
-
-    // Prevent stderr pipe from filling and blocking the child.
-    std::thread::spawn(move || {
-        let mut buf = [0u8; 1024];
-        use std::io::Read;
-        while let Ok(n) = stderr.read(&mut buf) {
-            if n == 0 {
-                break;
-            }
-        }
-    });
+    let stderr = child.stderr.take().ok_or("failed to open stderr")?;
 
     let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+    // Drain stderr (so the pipe cannot block the child) while keeping the tail:
+    // it is the only explanation a dying engine gives us.
+    let stderr_reg = stderr_log();
+    std::thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        let mut kept: Vec<String> = Vec::new();
+        for line in reader.lines() {
+            match line {
+                Ok(l) => {
+                    let t = l.trim();
+                    if !t.is_empty() {
+                        kept.push(t.to_string());
+                        if kept.len() > STDERR_KEEP_LINES {
+                            kept.remove(0);
+                        }
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+        if !kept.is_empty() {
+            stderr_reg
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert(id, kept);
+        }
+    });
 
     // stdout reader -> events
     let app_clone = app.clone();
@@ -393,9 +484,19 @@ pub fn spawn_engine(app: AppHandle, profile: String) -> Result<u32, String> {
                 match entry.child.try_wait() {
                     Ok(Some(status)) => {
                         let code = status.code();
+                        // Give the stderr thread a moment to flush its tail so a
+                        // fatal message is not lost in the race.
+                        std::thread::sleep(std::time::Duration::from_millis(60));
+                        let tail = stderr_log()
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .get(&id)
+                            .cloned()
+                            .unwrap_or_default()
+                            .join("\n");
                         let _ = app_clone2.emit(
                             &format!("engine://exit/{}", id),
-                            serde_json::json!({ "code": code }),
+                            serde_json::json!({ "code": code, "stderr": tail }),
                         );
                         map.remove(&id);
                         break;
@@ -464,4 +565,16 @@ pub fn engine_stop(id: u32) -> Result<(), String> {
 #[tauri::command]
 pub fn engine_nnue_path(app: AppHandle) -> Result<Option<String>, String> {
     Ok(nnue_path(&app).map(|p| p.to_string_lossy().to_string()))
+}
+
+/// Last stderr lines of an engine process (diagnostics; empty once it exits).
+#[tauri::command]
+pub fn engine_stderr(id: u32) -> Result<String, String> {
+    Ok(stderr_log()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&id)
+        .cloned()
+        .unwrap_or_default()
+        .join("\n"))
 }

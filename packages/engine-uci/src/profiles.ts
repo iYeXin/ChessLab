@@ -165,10 +165,16 @@ export function engineOptionPresetForLevel(
   };
   const limits: GoLimits = { movetimeMs: pickThinkTimeMs(lvl, clock) };
 
+  // Optional slots (e.g. UCI_Elo) are only sent when the user filled them in.
   if (overrides?.options) {
     for (const [k, v] of Object.entries(overrides.options)) {
       if (v !== undefined && v !== null && v !== '') options[k] = v;
     }
+  }
+  // `UCI_Elo` is inert unless native limiting is on, so turn it on for the user
+  // rather than shipping a control that silently does nothing.
+  if (options.UCI_Elo !== undefined && options.UCI_LimitStrength === undefined) {
+    options.UCI_LimitStrength = true;
   }
   if (overrides?.limits) {
     for (const [k, v] of Object.entries(overrides.limits)) {
@@ -176,6 +182,11 @@ export function engineOptionPresetForLevel(
     }
   }
   return { options, limits };
+}
+
+/** Option specs that make up the default preset (i.e. all non-optional ones). */
+export function defaultPresetOptions(): readonly StrengthOptionSpec[] {
+  return PIKAFISH_STRENGTH_OPTIONS.filter(o => !o.optional);
 }
 
 // ---------------------------------------------------------------------------
@@ -192,28 +203,44 @@ export interface StrengthOptionSpec {
   defaultValue: string | number | boolean;
   /** Short Chinese hint for the option editor. */
   hint: string;
+  /**
+   * Optional slot: shown in the editor but never part of the default preset.
+   * The user has to type a value for it to be sent at all.
+   */
+  optional?: boolean;
 }
 
 /**
- * The engine options that actually change how strongly Pikafish 2023-03-05
- * plays, transcribed from `pikafish-avx2.exe` -> `uci`. These drive (and
- * validate) mode 2's editor.
+ * The engine options the mode 2 editor exposes.
  *
- * Deliberately short. Everything else the engine reports was removed because it
- * does not affect playing strength under this app's fixed search limits:
- *   - `UCI_LimitStrength` / `UCI_Elo` — an alternative strength scale whose
- *     floor (1350) is far too strong for 「入门」; mode 2 uses `Skill Level`.
- *   - `MultiPV` — mode 2 plays the engine's bestmove verbatim, so it changes
- *     nothing here (a placebo control).
+ * Kept deliberately short: only options that can actually change how strongly
+ * Pikafish plays under this app's fixed search limits. Everything else the
+ * engine reports was removed rather than shipped as a placebo control:
+ *   - `MultiPV` — mode 2 plays the engine's bestmove verbatim.
  *   - `Slow Mover` / `Move Overhead` / `nodestime` — time-management knobs that
  *     only matter under a `go wtime/btime` clock; we send `go movetime/nodes`.
  *   - `Threads` / `Hash` — resource usage, not playing strength at fixed work.
  *   - `Sixty Move Rule` / `Repetition Rule` / `Repetition Fold` — adjudication.
  *   - `UCI_ShowWDL` — output formatting only.
+ *
+ * `UCI_Elo` stays as an **optional** slot (default: unset). The engine's Elo
+ * floor is 1350, which is far too strong for 「入门」, so the shipped difficulty
+ * ladder uses `Skill Level` instead — but a tester who wants to pin an Elo can
+ * type one. Setting it also switches `UCI_LimitStrength` on, because the engine
+ * ignores `UCI_Elo` otherwise.
  */
 export const PIKAFISH_STRENGTH_OPTIONS: readonly StrengthOptionSpec[] = [
   { name: 'Skill Level', type: 'spin', min: 0, max: 20, defaultValue: 20, hint: '棋力等级：0 最弱，20 最强' },
   { name: 'Mate Threat Depth', type: 'spin', min: 0, max: 10, defaultValue: 1, hint: '杀棋威胁搜索深度' },
+  {
+    name: 'UCI_Elo',
+    type: 'spin',
+    min: 1350,
+    max: 2850,
+    defaultValue: 1350,
+    hint: '可选：填写后按等级分限强（会自动开启 UCI_LimitStrength）',
+    optional: true,
+  },
 ] as const;
 
 export function strengthOptionSpec(name: string): StrengthOptionSpec | undefined {

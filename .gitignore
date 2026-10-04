@@ -60,3 +60,6 @@ coverage/
 /luozi.mp3
 # settings screenshots from local experiments
 app-icon.png
+
+# Android engine net, staged into public/ for the Android build only (build.js)
+apps/desktop/public/pikafish.nnue

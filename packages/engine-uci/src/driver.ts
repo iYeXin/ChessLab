@@ -93,7 +93,14 @@ export class UciEngineDriver {
     this.transport = transport;
 
     const exitP = transport.exited.then(code => {
-      const reason = `process exited (code ${code ?? 'signal'})`;
+      const lastLine = (transport.stderrTail ?? '')
+        .split('\n')
+        .map(s => s.trim())
+        .filter(Boolean)
+        .pop();
+      const reason =
+        `process exited (code ${code ?? 'signal'})` +
+        (lastLine ? `: ${lastLine.slice(0, 200)}` : '');
       this.alive = false;
       this.deathReason = reason;
       for (const p of this.pending.splice(0)) {

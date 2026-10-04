@@ -208,11 +208,11 @@ function Mode2Panel(props: {
     [level, override],
   );
 
-  const setOption = (name: string, value: string | number | boolean) => {
-    onChange({
-      options: { ...(override?.options ?? {}), [name]: value },
-      ...numericLimits(override),
-    });
+  const setOption = (name: string, value: string | number | boolean | undefined) => {
+    const next = { ...(override?.options ?? {}) };
+    if (value === undefined) delete next[name];
+    else next[name] = value;
+    onChange({ options: next, ...numericLimits(override) });
   };
 
   const setBudget = (key: 'movetimeMs' | 'nodes' | 'depth', value: number | undefined) => {
@@ -235,6 +235,7 @@ function Mode2Panel(props: {
               key={spec.name}
               spec={spec}
               value={effectiveValue(spec, preset.options, override?.options)}
+              placeholder={spec.optional ? String(spec.defaultValue) : undefined}
               onChange={v => setOption(spec.name, v)}
             />
           ))}
@@ -344,7 +345,7 @@ function OptionRow(props: {
   spec: StrengthOptionSpec;
   value: string | number | boolean | undefined;
   placeholder?: string;
-  onChange(v: string | number | boolean): void;
+  onChange(v: string | number | boolean | undefined): void;
 }) {
   const { spec, value, onChange } = props;
   const control = (() => {
@@ -373,7 +374,8 @@ function OptionRow(props: {
         placeholder={props.placeholder}
         onChange={e => {
           const raw = e.target.value;
-          if (raw === '') return;
+          // Clearing an optional slot removes it, so nothing is sent.
+          if (raw === '') return onChange(undefined);
           let n = Number(raw);
           if (!Number.isFinite(n)) return;
           if (spec.min !== undefined) n = Math.max(spec.min, n);
@@ -397,10 +399,14 @@ function OptionRow(props: {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12, color: C.text, fontWeight: 600 }}>{spec.name}</div>
+        <div style={{ fontSize: 12, color: C.text, fontWeight: 600 }}>
+          {spec.name}
+          {spec.optional ? <span style={{ fontSize: 10, color: C.muted, fontWeight: 400 }}>（可选）</span> : null}
+        </div>
         {spec.type === 'spin' && spec.min !== undefined ? (
           <div style={{ fontSize: 10, color: C.muted }}>{spec.min}–{spec.max}</div>
         ) : null}
+        {spec.optional ? <div style={{ fontSize: 10, color: C.muted }}>{spec.hint}</div> : null}
       </div>
       {control}
     </div>
@@ -452,6 +458,8 @@ function effectiveValue(
   override: Record<string, string | number | boolean> | undefined,
 ): string | number | boolean | undefined {
   if (override && spec.name in override) return override[spec.name];
+  // Optional slots start empty: the user must type a value for it to be sent.
+  if (spec.optional) return undefined;
   if (spec.name in preset) return preset[spec.name];
   const profileDefault = PIKAFISH_PROFILE.defaultOptions[spec.name];
   if (profileDefault !== undefined) return profileDefault;
