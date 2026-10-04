@@ -228,7 +228,7 @@ export class GameSession {
     const factory = this.opts.engineRunnerFactory;
     if (!factory) return null;
     const profileId = 'pikafish';
-    this.hintRunner ??= await factory({ profileId, strengthLevel: 20 });
+    this.hintRunner ??= await factory({ profileId, strengthLevel: 20, side: this.rules.turn() });
     try {
       const pos = this.engineSearchPosition();
       const { bestmove } = await this.hintRunner.requestMove({
@@ -531,7 +531,10 @@ export class GameSession {
     if (!factory) return;
     for (const cfg of [this.opts.white, this.opts.black]) {
       if (cfg.kind === 'engine') {
-        this.runners.set(cfg.side, await factory({ profileId: cfg.profileId, strengthLevel: cfg.strengthLevel }));
+        this.runners.set(
+          cfg.side,
+          await factory({ profileId: cfg.profileId, strengthLevel: cfg.strengthLevel, side: cfg.side }),
+        );
       }
     }
   }

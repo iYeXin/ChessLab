@@ -94,15 +94,21 @@ export function SettingsScreen(props: { onBack(): void }) {
           {settings.testerMode ? (
             <div style={{ padding: '12px 14px', borderBottom: '1px solid #F1EADC' }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: '#2A251D' }}>
-                当前棋力方案：模式 {settings.engineMode}
+                人机 / 残局：模式 {settings.engineMode}
               </div>
               <div style={{ fontSize: 10, color: '#8A8070', marginTop: 3, lineHeight: 1.6 }}>
                 {ENGINE_MODE_LABELS[settings.engineMode].title}
                 <br />
                 {ENGINE_MODE_LABELS[settings.engineMode].hint}
               </div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#2A251D', marginTop: 10 }}>
+                观战：红方 模式 {settings.engineModeWhite} · 黑方 模式 {settings.engineModeBlack}
+              </div>
+              <div style={{ fontSize: 10, color: '#8A8070', marginTop: 3, lineHeight: 1.6 }}>
+                双方各自独立，可混用不同模式（异构）：例如红方走模式 1、黑方走模式 3 的档位模型。
+              </div>
               <div style={{ fontSize: 10, color: '#A63A2B', marginTop: 6, lineHeight: 1.6 }}>
-                棋力方案与自定义选项都在「选择难度」的模态框里调整；关闭测试人员模式后仍沿用当前方案。
+                以上都在「选择难度」的模态框里调整；关闭测试人员模式后仍沿用当前方案。
               </div>
             </div>
           ) : null}

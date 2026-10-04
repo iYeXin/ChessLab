@@ -62,6 +62,7 @@ export function GameSetupScreen(props: {
           <Section label={mode === 'eve' ? '红方 棋力' : mode === 'pvp' ? '难度（仅作记录）' : '难度'}>
             <DifficultyPicker
               label={mode === 'eve' ? '红方 棋力' : '难度'}
+              modeTarget={mode === 'eve' ? 'white' : 'global'}
               difficulty={difficulty}
               onChange={setDifficulty}
               showLevel
@@ -71,7 +72,13 @@ export function GameSetupScreen(props: {
           {mode === 'eve' ? (
             <>
               <Section label="黑方棋力">
-                <DifficultyPicker label="黑方 棋力" difficulty={difficultySecond} onChange={setDifficultySecond} />
+                <DifficultyPicker
+                  label="黑方 棋力"
+                  modeTarget="black"
+                  difficulty={difficultySecond}
+                  onChange={setDifficultySecond}
+                  showLevel
+                />
               </Section>
               <Section label="步进">
                 <div style={{ display: 'flex', gap: 'var(--sp-s)' }}>

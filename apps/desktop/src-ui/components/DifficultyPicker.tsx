@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { DIFFICULTY_IDS, difficultyLabel, levelForDifficulty, type Difficulty } from '../state/difficulty';
-import { useSettings } from '../state/settings';
+import { engineModeFor, useSettings, type EngineModeTarget } from '../state/settings';
 import { DifficultyModal } from './DifficultyModal';
 
 /**
@@ -14,6 +14,8 @@ import { DifficultyModal } from './DifficultyModal';
 export function DifficultyPicker(props: {
   /** Modal title, e.g. "难度" or "黑方 棋力". */
   label: string;
+  /** Which engine-mode setting this picker edits (观战模式按方独立). */
+  modeTarget?: EngineModeTarget;
   difficulty: Difficulty;
   onChange(d: Difficulty): void;
   /** Show the engine level next to each label (setup screen convenience). */
@@ -21,6 +23,8 @@ export function DifficultyPicker(props: {
 }) {
   const { settings } = useSettings();
   const [open, setOpen] = useState(false);
+  const target: EngineModeTarget = props.modeTarget ?? 'global';
+  const mode = engineModeFor(settings, target);
 
   if (settings.testerMode) {
     const level = levelForDifficulty(props.difficulty);
@@ -45,7 +49,7 @@ export function DifficultyPicker(props: {
             {difficultyLabel(props.difficulty)}
           </span>
           <span style={{ fontSize: 10, color: '#8A8070' }}>
-            模式 {settings.engineMode} · 强度 {level}
+            模式 {mode} · 强度 {level}
           </span>
           <span style={{ flex: 1 }} />
           <span style={{ fontSize: 11, color: '#A63A2B', fontWeight: 600 }}>调整 ›</span>
@@ -54,6 +58,7 @@ export function DifficultyPicker(props: {
         <DifficultyModal
           visible={open}
           label={props.label}
+          modeTarget={target}
           difficulty={props.difficulty}
           onDifficulty={d => props.onChange(d)}
           onClose={() => setOpen(false)}

@@ -56,8 +56,14 @@ export interface AppSettings {
    * inline difficulty pickers are used and the stored engine mode still applies.
    */
   testerMode: boolean;
-  /** Difficulty strategy (see EngineMode). Default 1. */
+  /** Difficulty strategy (see EngineMode) for 人机 / 残局. Default 1. */
   engineMode: EngineMode;
+  /**
+   * 观战模式：红方 / 黑方各自的棋力方案。允许**异构**（例如红方走引擎原生选项、
+   * 黑方走 ONNX 档位模型），因为双方本来就是两个独立 runner。
+   */
+  engineModeWhite: EngineMode;
+  engineModeBlack: EngineMode;
   /** Mode 2 custom overrides, keyed by engine strength level ("2","6","10","14","18"). */
   mode2: Mode2Overrides;
   /** Mode 3: move-choice temperature preset (research doc §5). */
@@ -78,6 +84,8 @@ const DEFAULTS: AppSettings = {
 
   testerMode: false,
   engineMode: 1,
+  engineModeWhite: 1,
+  engineModeBlack: 1,
   mode2: {},
   onnxTemperature: 'play',
   onnxMateGuard: true,
@@ -175,3 +183,23 @@ export const ENGINE_MODE_LABELS: Record<EngineMode, { title: string; hint: strin
     hint: '实验性研究产物，在 WebView 内用 WebGPU / WASM 推理，T1 最弱、T5 最强',
   },
 };
+
+/**
+ * Which setting a difficulty modal edits.
+ *  - `global` : 人机 / 残局（单一对手）
+ *  - `white` / `black` : 观战模式下的红方 / 黑方，可各自选不同方案（异构）
+ */
+export type EngineModeTarget = 'global' | 'white' | 'black';
+
+export function engineModeFor(settings: AppSettings, target: EngineModeTarget): EngineMode {
+  if (target === 'white') return settings.engineModeWhite;
+  if (target === 'black') return settings.engineModeBlack;
+  return settings.engineMode;
+}
+
+export function targetLabel(target: EngineModeTarget): string {
+  if (target === 'white') return '红方';
+  if (target === 'black') return '黑方';
+  return '';
+}
+

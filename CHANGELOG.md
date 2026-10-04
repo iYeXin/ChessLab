@@ -26,6 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/
 - **`scripts/fetch-assets.mjs` / `pnpm fetch:assets`**：把 5 个 fp16 档位模型（23.2 MB）与 onnxruntime 运行时（40.6 MB）拷入 `apps/desktop/public/`（已 gitignore）
 - **测试人员模式**（设置页「实验功能」）：开启后，对局配置的「难度」「黑方棋力」与残局页的「难度」都改为弹出 `DifficultyModal`，其中统一选择棋力方案（1/2/3）、档位与该方案的具体设置；关闭后恢复原来的内联胶囊选择，已保存的方案继续生效
 - `DifficultyPicker` 组件：把"内联胶囊 / 模态框"两种形态收敛到一处，三个调用点行为一致
+- **观战模式可按方分别选择棋力方案（允许异构）**：
+  - `EngineRunnerFactory` 的入参新增 `side`（`packages/game-session`），`ensureRunners()` 与惰性 `hint()` runner 都会传入，因此宿主能**按方**解析策略；双方本就各自持有独立 runner，异构不引入额外结构
+  - 设置新增 `engineModeWhite` / `engineModeBlack`（默认 1）；`makeSessionFactories()` 用 `modeFor(side)` 在每次建 runner 时解析模式，故红方可以走模式 1 而黑方走模式 3 的档位模型
+  - 辅助分析改为「**只要有一方是 UCI 引擎就提供**」（原先"全局模式 3 则不提供"），否则异构时红方是 UCI 也会丢掉分析能力
+  - 难度模态框与选择器新增 `modeTarget`（`global` / `white` / `black`）：观战的红方、黑方入口各自读写自己那份设置，并在标题与提示里标注所属方
+  - 设置页显示三份方案（人机/残局、观战红方、观战黑方）并说明可混用
+  - 新增 3 个 `game-session` 用例锁定契约：工厂收到正确的 `side` 与**该方自己的**强度、双方 runner 是不同实例、`hint()` 也会告知行棋方
 - 新增测试：`engine-onnx` 两个套件共 27 例（含**专门针对 `8099 - m` 翻转**、黑方行棋、掩码只落在合法着法、杀棋守卫优先级）与 `engine-uci` 棋力模式 10 例（Elo 区间单调、越界夹取、覆盖优先、空值剔除）
 
 ### Changed — 第二轮

@@ -169,6 +169,11 @@ interface EngineTurnStrategy {
 `createUciRunner(driver, strategy)` 只按 `plan()` 下发的 `options` 与 `spec.limits` 执行，
 因此新增方案不需要改动 runner、会话或界面。
 
+**策略是「按方」解析的**：`EngineRunnerFactory` 的入参带 `side`，`makeSessionFactories()`
+在每次建 runner 时用 `modeFor(side)` 决定该方用哪套方案。观战模式双方各持一个独立
+runner，所以红黑可以**异构**（红方模式 1、黑方模式 3 等）；辅助分析只要有任一方是
+UCI 引擎就可用。
+
 | 模式 | 策略 | 做法 | 随机 |
 |---|---|---|---|
 | 1（默认） | `hostWeakenedStrategy()` | `nodes` + 浅 `depth`（跨设备确定）+ `movetime` 慢机安全帽 | 仅近分着法间 |

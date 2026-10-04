@@ -17,8 +17,11 @@ import {
 import { preloadTierSession } from '../state/onnx';
 import {
   ENGINE_MODE_LABELS,
+  engineModeFor,
+  targetLabel,
   useSettings,
   type EngineMode,
+  type EngineModeTarget,
   type Mode2LevelOverride,
   type OnnxTemperatureId,
 } from '../state/settings';
@@ -49,14 +52,17 @@ export interface DifficultyModalProps {
   visible: boolean;
   /** What is being chosen, e.g. "难度" or "黑方棋力". */
   label: string;
+  /** Which setting the mode buttons edit (观战模式下按方分别设置). */
+  modeTarget?: EngineModeTarget;
   difficulty: Difficulty;
   onDifficulty(d: Difficulty): void;
   onClose(): void;
 }
 
 export function DifficultyModal(props: DifficultyModalProps) {
-  const { settings, update, setMode2Override } = useSettings();
-  const mode = settings.engineMode;
+  const { settings, update, setSettings, setMode2Override } = useSettings();
+  const target: EngineModeTarget = props.modeTarget ?? 'global';
+  const mode = engineModeFor(settings, target);
   const level = levelForDifficulty(props.difficulty);
 
   // Warm the ONNX session as soon as the tier is picked, so the first move in
@@ -65,6 +71,14 @@ export function DifficultyModal(props: DifficultyModalProps) {
   useEffect(() => {
     if (props.visible && mode === 3) preloadTierSession(onnxTier);
   }, [props.visible, mode, onnxTier]);
+
+  const setMode = (m: EngineMode) => {
+    setSettings(prev => {
+      if (target === 'white') return { ...prev, engineModeWhite: m };
+      if (target === 'black') return { ...prev, engineModeBlack: m };
+      return { ...prev, engineMode: m };
+    });
+  };
 
   if (!props.visible) return null;
 
@@ -111,13 +125,13 @@ export function DifficultyModal(props: DifficultyModalProps) {
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           {/* engine mode */}
-          <Section title="棋力方案">
+          <Section title={target === 'global' ? '棋力方案' : `棋力方案（${targetLabel(target)}）`}>
             <div style={{ display: 'flex', gap: 8 }}>
               {([1, 2, 3] as EngineMode[]).map(m => (
                 <button
                   key={m}
                   type="button"
-                  onClick={() => update('engineMode', m)}
+                  onClick={() => setMode(m)}
                   style={{
                     flex: 1,
                     padding: '9px 0',
@@ -138,6 +152,11 @@ export function DifficultyModal(props: DifficultyModalProps) {
               <br />
               <span style={{ color: C.muted }}>{ENGINE_MODE_LABELS[mode].hint}</span>
             </div>
+            {target === 'global' ? null : (
+              <div style={{ marginTop: 6, fontSize: 10, color: C.accent, lineHeight: 1.5 }}>
+                观战模式下红黑各自独立，可混用不同模式（异构）；另一方在它自己的棋力入口里设置。
+              </div>
+            )}
           </Section>
 
           {/* difficulty */}

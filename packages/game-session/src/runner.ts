@@ -4,7 +4,7 @@ import type {
   UciEngineDriver,
 } from '@chessnext/engine-uci';
 import { choosePikafishMove } from '@chessnext/engine-uci';
-import type { MoveUci } from '@chessnext/rules-core';
+import type { MoveUci, Side } from '@chessnext/rules-core';
 
 /**
  * Engine turn execution, decoupled from transports so sessions can be tested
@@ -33,6 +33,12 @@ export interface EngineTurnRunner {
 export type EngineRunnerFactory = (args: {
   profileId: string;
   strengthLevel: number;
+  /**
+   * Which side this runner plays. Lets the host pick a different difficulty
+   * strategy per side, so 观战 can run heterogeneous setups (e.g. Red on the
+   * engine's native options while Black uses the ONNX tier model).
+   */
+  side: Side;
 }) => Promise<EngineTurnRunner> | EngineTurnRunner;
 
 /**

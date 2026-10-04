@@ -292,6 +292,87 @@ describe('GameSession (engine vs engine)', () => {
   }, 8000);
 });
 
+describe('GameSession engine-vs-engine: independent runners per side', () => {
+  it('tells the factory which side it builds for, with that side’s level', async () => {
+    // This is what lets 观战 mix difficulty modes (异构): the host resolves a
+    // strategy per side from (side, strengthLevel).
+    const requested: { side: string; level: number; profileId: string }[] = [];
+    const session = new GameSession({
+      rules: new XiangqiRules(),
+      white: { kind: 'engine', side: 'w', profileId: 'pikafish', strengthLevel: 6 },
+      black: { kind: 'engine', side: 'b', profileId: 'pikafish', strengthLevel: 18 },
+      engineRunnerFactory: async ({ side, strengthLevel, profileId }) => {
+        requested.push({ side, level: strengthLevel, profileId });
+        return {
+          profileId: `fake-${side}`,
+          async requestMove() {
+            return { bestmove: null };
+          },
+          cancel() {},
+          async dispose() {},
+        };
+      },
+    });
+
+    await session.start();
+    expect(requested).toEqual([
+      { side: 'w', level: 6, profileId: 'pikafish' },
+      { side: 'b', level: 18, profileId: 'pikafish' },
+    ]);
+    await session.dispose();
+  });
+
+  it('gives each side its own runner instance', async () => {
+    const runners: string[] = [];
+    let n = 0;
+    const session = new GameSession({
+      rules: new XiangqiRules(),
+      white: { kind: 'engine', side: 'w', profileId: 'pikafish', strengthLevel: 10 },
+      black: { kind: 'engine', side: 'b', profileId: 'pikafish', strengthLevel: 10 },
+      engineRunnerFactory: async ({ side }) => {
+        n += 1;
+        const id = `runner-${side}-${n}`;
+        runners.push(id);
+        return {
+          profileId: id,
+          async requestMove() {
+            return { bestmove: null };
+          },
+          cancel() {},
+          async dispose() {},
+        };
+      },
+    });
+    await session.start();
+    expect(runners).toHaveLength(2);
+    expect(new Set(runners).size).toBe(2); // not a shared instance
+    await session.dispose();
+  });
+
+  it('tells the lazy hint runner which side is on move', async () => {
+    const sides: string[] = [];
+    const session = new GameSession({
+      rules: new XiangqiRules(),
+      white: { kind: 'human', side: 'w' },
+      black: { kind: 'human', side: 'b' },
+      engineRunnerFactory: async ({ side }) => {
+        sides.push(side);
+        return {
+          profileId: 'fake',
+          async requestMove() {
+            return { bestmove: 'h2e2' };
+          },
+          cancel() {},
+          async dispose() {},
+        };
+      },
+    });
+    await session.hint();
+    expect(sides).toEqual(['w']); // Red is to move in the opening
+    await session.dispose();
+  });
+});
+
 describe('GameClock flagging', () => {
   it('flags the active side when their time elapses (injected clock)', () => {
     let fakeNow = 0;
