@@ -11,7 +11,7 @@ import {
   type RulesAdapter,
   type Side,
   type Square,
-} from '@chesslab/rules-core';
+} from '@chessnext/rules-core';
 import { adjudicateRepetition, positionKey } from './adjudicate';
 
 const Xiangqi = vendor.Xiangqi;
@@ -147,9 +147,31 @@ export class XiangqiRules implements RulesAdapter {
     return new XiangqiRules(this.fen());
   }
 
-  /** Direct passthrough for tests / debugging. */
+  /**
+   * Node count for the current position, matching Pikafish `go perft <depth>`.
+   *
+   * NOTE — why this does not call the vendored `xiangqi.js` `perft()`:
+   * that helper generates PSEUDO-legal moves and then filters with
+   * `if (!king_attacked(turn))` *after* `make_move`, at which point `turn` has
+   * already flipped to the OPPONENT. It therefore counts moves that leave the
+   * mover's own general en prise and discards moves that give check. Measured
+   * at depth 3 from the start position it returns 79446 where the true value
+   * (Pikafish 2026-01-02) is 79666 — a defect in the debug utility only; the
+   * move generator itself agrees with the engine move-for-move.
+   *
+   * We therefore walk our own verified legal move list.
+   */
   perft(depth: number): number {
-    return this.g.perft(depth);
+    if (depth <= 0) return 1;
+    const moves = this.g.moves({ verbose: true }) as vendor.XiangqiPrettyMove[];
+    if (depth === 1) return moves.length;
+    let nodes = 0;
+    for (const m of moves) {
+      if (!this.g.move(m.iccs)) continue; // defensive: list came from the engine
+      nodes += this.perft(depth - 1);
+      this.g.undo();
+    }
+    return nodes;
   }
 
   // ---- repetition tracking --------------------------------------------------

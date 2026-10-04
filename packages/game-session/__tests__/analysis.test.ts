@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createUciAssistEngine } from '../src/analysis';
-import { STOCKFISH_PROFILE } from '@chesslab/engine-uci';
-import { UciEngineDriver } from '@chesslab/engine-uci/src/driver';
-import type { EngineTransport } from '@chesslab/engine-uci/src/types';
+import { PIKAFISH_PROFILE } from '@chessnext/engine-uci';
+import { UciEngineDriver } from '@chessnext/engine-uci/src/driver';
+import type { EngineTransport } from '@chessnext/engine-uci/src/types';
 
 class ScriptedTransport implements EngineTransport {
   written: string[] = [];
@@ -14,7 +14,7 @@ class ScriptedTransport implements EngineTransport {
   write(line: string): void {
     this.written.push(line);
     if (line === 'uci') {
-      this.feed('id name Stockfish 18');
+      this.feed('id name Pikafish 2026-01-02');
       this.feed('option name MultiPV type spin default 1 min 1 max 500');
       this.feed('uciok');
     } else if (line === 'isready') {
@@ -37,7 +37,7 @@ class ScriptedTransport implements EngineTransport {
 
 async function makeAssist() {
   const t = new ScriptedTransport();
-  const driver = new UciEngineDriver(STOCKFISH_PROFILE);
+  const driver = new UciEngineDriver(PIKAFISH_PROFILE);
   await driver.start(t);
   const assist = createUciAssistEngine(driver);
   return { assist, t, driver };

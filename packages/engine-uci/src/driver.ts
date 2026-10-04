@@ -1,5 +1,5 @@
 import { parseUciLine, uciCommands } from './protocol';
-import type { MoveUci } from '@chesslab/rules-core';
+import type { MoveUci } from '@chessnext/rules-core';
 import type {
   EngineId,
   EngineInfo,

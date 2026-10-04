@@ -13,6 +13,8 @@ apps/*/android/.gradle/
 apps/*/android/local.properties
 apps/*/android/app/src/main/jniLibs/
 *.keystore
+# android signing key: generated locally by build.js, never committed
+*.jks
 !debug.keystore
 
 # react-native-windows
@@ -23,7 +25,16 @@ apps/*/windows/.vs/
 
 # engines / third_party artifacts (fetched by scripts, never committed)
 third_party/
-apps/desktop/engines/
+# mode 3 (ONNX tier models) runtime assets: staged by scripts/fetch-assets.mjs.
+# ~24 MB of tier weights + ~42 MB of onnxruntime wasm — too big for git, but they
+# must be present before `vite build` for mode 3 to work offline.
+apps/desktop/public/models/
+apps/desktop/public/ort/
+# staged engine binaries. The directory itself is tracked via .keep: Tauri's
+# build script hard-fails when a declared resource path ("../engines") is
+# missing, so a fresh clone must still have the folder.
+apps/desktop/engines/*
+!apps/desktop/engines/.keep
 apps/desktop/src-tauri/target/
 *.nnue
 # tauri android: regenerated at build time (frontend dist + bundled resources)
@@ -47,3 +58,5 @@ coverage/
 .shot*
 # stray duplicate of apps/desktop/public/sounds/luozi.mp3
 /luozi.mp3
+# settings screenshots from local experiments
+app-icon.png

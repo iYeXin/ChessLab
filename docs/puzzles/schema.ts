@@ -1,37 +1,39 @@
 /**
- * Standard Puzzle Schema for ChessLab
- * 适用于国际象棋 (chess, 8x8) 与中国象棋 (xiangqi, 9x10)
- * 设计目标：与 packages/rules-core 的 RulesAdapter / MoveUci / FEN 完全兼容，
- * 可直接被 engine-uci (Stockfish/Pikafish) 验证，可被 game-session 回放。
+ * Standard Puzzle Schema — 中国象棋（xiangqi, 9x10）
+ *
+ * 与 `packages/puzzles/src/types.ts` 保持一致；设计目标是与
+ * `packages/rules-core` 的 RulesAdapter / MoveUci / FEN 完全兼容，
+ * 可直接被 engine-uci (Pikafish) 验证，也可被 game-session 回放。
  */
 
-import type { GameType, MoveUci, Side } from '@chesslab/rules-core';
+import type { GameType, MoveUci, Side } from '@chessnext/rules-core';
 
 export interface Puzzle {
-  /** 全局唯一，如 xiangqi-shiqing-001 / chess-lichess-00sHx */
+  /** 全局唯一，如 xiangqi-basic-001 / xiangqi-large-001 */
   id: string;
   gameType: GameType;
   title: string;
-  /** 标准 FEN：chess 8行含半回合/易位，xiangqi 10行 w=红先 */
+  /** 象棋 FEN：10 行，w = 红先 */
   fen: string;
   sideToMove: Side;
-  /** 解法序列，仅含谜面后的正解（Lichess 需去掉首步坏着） */
+  /**
+   * 参考解法（ICCS）。**注意**：这是采集时的参考着法，不是单步杀着；
+   * 残局现为完整人机对战，不做单步强制判定。
+   */
   solution: MoveUci[];
-  /** 主题：如 rookEndgame/lucena/philidor / basic-checkmate/smothered */
+  /** 主题：如 basic / checkmate / cannon / shi-qing-ya-qu / jianghu */
   themes: string[];
-  /** 1-5 内部难度（Lichess Rating 1500-1700→2, 1900+→4等；古谱按名局难度） */
+  /** 1-5 内部难度（古谱按名局难度） */
   rating: 1 | 2 | 3 | 4 | 5;
-  /** 来源描述，如 "dffge552/xiangqi-pwa-offline / shi-qing-ya-qu #001" */
+  /** 来源描述，如 "basic-checkmates / 对面笑" */
   source: string;
   sourceUrl?: string;
-  license: string; // "MIT" | "CC0" | "Public Domain"
+  /** 目前仅有 "MIT"（xiangqi-pwa-offline） */
+  license: string;
   description?: string;
-  /** 仅 Lichess：对手的坏着，用于从原始FEN还原谜面 */
-  initialMove?: MoveUci | null;
 }
 
-// 校验辅助（与后续 scripts/fetch-puzzles.ts 共用）
+/** 校验辅助：象棋 FEN 应为 10 行。 */
 export function isValidPuzzleFen(p: Puzzle): boolean {
-  const ranks = p.fen.split(' ')[0].split('/');
-  return p.gameType === 'chess' ? ranks.length === 8 : ranks.length === 10;
+  return p.fen.split(' ')[0]?.split('/').length === 10;
 }

@@ -1,4 +1,4 @@
-// ChessLab — minimal dual icon
+// ChessNext — minimal dual icon
 // 1024x1024, rounded square parchment + dark disc with "弈" seal
 // Pure Node, no deps.
 import { deflateSync } from 'node:zlib';

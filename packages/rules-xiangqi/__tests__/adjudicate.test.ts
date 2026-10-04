@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Side } from '@chesslab/rules-core';
+import type { Side } from '@chessnext/rules-core';
 import { adjudicateRepetition, positionKey, type ReplayRules } from '../src/adjudicate';
 import { XiangqiRules } from '../src';
 

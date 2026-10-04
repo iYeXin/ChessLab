@@ -1,10 +1,20 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import type { EngineTransport } from '@chesslab/engine-uci';
-import type { EngineSpawnSpec, TransportFactory } from './index';
+import type { EngineTransport } from '../packages/engine-uci/src/types';
 
-/** Node.js child_process transport — used by tests, CI smoke runs and tooling. */
-export function createNodeTransportFactory(): TransportFactory {
-  return async (spec: EngineSpawnSpec) => new NodeProcessTransport(spec);
+/**
+ * Node.js child_process transport — used ONLY by dev tooling and smoke runs
+ * under `scripts/` (the app itself talks to engines through the Tauri
+ * transport in `apps/desktop/src-ui/transport/tauri.ts`).
+ *
+ * It deliberately lives outside `packages/engine-uci` so bundlers never pull
+ * `node:child_process` into a WebView build.
+ */
+
+export interface NodeSpawnSpec {
+  /** Absolute or PATH-resolvable path to the executable. */
+  command: string;
+  args?: readonly string[];
+  cwd?: string;
 }
 
 export class NodeProcessTransport implements EngineTransport {
@@ -15,7 +25,7 @@ export class NodeProcessTransport implements EngineTransport {
 
   readonly exited: Promise<number | null>;
 
-  constructor(private spec: EngineSpawnSpec) {
+  constructor(private spec: NodeSpawnSpec) {
     this.child = spawn(spec.command, [...(spec.args ?? [])], {
       cwd: spec.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],

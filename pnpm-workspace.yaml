@@ -5,7 +5,8 @@ packages:
 # pnpm 11+: allowlist for dependency build scripts.
 allowBuilds:
   esbuild: true
+  # pulled in by onnxruntime-web; its postinstall only normalises its own
+  # package layout for dual CJS/ESM consumption.
+  protobufjs: true
 
 confirmModulesPurge: false
-
-# React Native leftovers removed with apps/chessapp purge (v0.3.0).

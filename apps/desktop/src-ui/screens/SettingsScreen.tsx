@@ -1,15 +1,15 @@
 import React from 'react';
-import { themeClassFor, CHESS_THEME } from '../theme/games';
+import { THEME_CLASS, XIANGQI_THEME } from '../theme/games';
 import { TopBar } from '../components/GameChrome';
-import { useSettings, type XiangqiFont, type XiangqiTexture, type ChessBoardStyle, type MoveHistoryMode, type XiangqiNotation } from '../state/settings';
+import { useSettings, ENGINE_MODE_LABELS, type XiangqiFont, type XiangqiTexture, type MoveHistoryMode, type XiangqiNotation } from '../state/settings';
 import { playPreviewSound } from '../game/sound';
 
 export function SettingsScreen(props: { onBack(): void }) {
-  const theme = CHESS_THEME; // settings screen uses neutral chess chrome
+  const theme = XIANGQI_THEME;
   const { settings, update, reset } = useSettings();
 
   return (
-    <div className={themeClassFor('chess')} style={{ height: '100%', backgroundColor: '#F1EADC', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div className={THEME_CLASS} style={{ height: '100%', backgroundColor: '#F1EADC', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <TopBar theme={theme} title="设置" subtitle="SETTINGS" onBack={props.onBack} />
       <div className="scrollable" style={{ flex: 1, overflowY: 'auto', padding: 'var(--sp-l) var(--sp-l)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-l)', maxWidth: 480, width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
         <SettingSection title="对局显示">
@@ -36,18 +36,6 @@ export function SettingsScreen(props: { onBack(): void }) {
               update('soundEnabled', v);
               if (v) setTimeout(() => playPreviewSound(), 30);
             }}
-          />
-        </SettingSection>
-
-        <SettingSection title="国际象棋">
-          <SelectRow<ChessBoardStyle>
-            label="棋盘质感"
-            value={settings.chessBoardStyle}
-            options={[
-              { value: 'classic', label: '经典' },
-              { value: 'polished', label: '精致（优化边框/阴影/坐标）' },
-            ]}
-            onChange={v => update('chessBoardStyle', v)}
           />
         </SettingSection>
 
@@ -94,6 +82,30 @@ export function SettingsScreen(props: { onBack(): void }) {
             ]}
             onChange={v => update('autoDelayMs', v)}
           />
+        </SettingSection>
+
+        <SettingSection title="实验功能">
+          <ToggleRow
+            label="测试人员模式"
+            desc="开启后，任何选择难度的地方都会弹出完整模态框"
+            value={settings.testerMode}
+            onChange={v => update('testerMode', v)}
+          />
+          {settings.testerMode ? (
+            <div style={{ padding: '12px 14px', borderBottom: '1px solid #F1EADC' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#2A251D' }}>
+                当前棋力方案：模式 {settings.engineMode}
+              </div>
+              <div style={{ fontSize: 10, color: '#8A8070', marginTop: 3, lineHeight: 1.6 }}>
+                {ENGINE_MODE_LABELS[settings.engineMode].title}
+                <br />
+                {ENGINE_MODE_LABELS[settings.engineMode].hint}
+              </div>
+              <div style={{ fontSize: 10, color: '#A63A2B', marginTop: 6, lineHeight: 1.6 }}>
+                棋力方案与自定义选项都在「选择难度」的模态框里调整；关闭测试人员模式后仍沿用当前方案。
+              </div>
+            </div>
+          ) : null}
         </SettingSection>
 
         <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--sp-l) 0' }}>

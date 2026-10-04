@@ -1,11 +1,11 @@
-import type { EngineInfo } from '@chesslab/engine-uci';
+import type { EngineInfo } from '@chessnext/engine-uci';
 import type {
   GameResult,
   LegalMove,
   MoveUci,
   RulesAdapter,
   Side,
-} from '@chesslab/rules-core';
+} from '@chessnext/rules-core';
 import { GameClock, type ClockState, type TimeControlMs } from './clock';
 import type { AssistEngine, AssistEngineFactory, AssistSnapshot } from './analysis';
 import type { EngineRunnerFactory, EngineTurnRunner } from './runner';
@@ -16,7 +16,7 @@ export type PlayerConfig =
       kind: 'engine';
       side: Side;
       name?: string;
-      /** 'stockfish' for chess games, 'pikafish' for xiangqi. */
+      /** Engine profile id — 'pikafish' for xiangqi. */
       profileId: string;
       /** 1 (weakest) .. 20 (strongest). */
       strengthLevel: number;
@@ -227,7 +227,7 @@ export class GameSession {
   async hint(movetimeMs = 700): Promise<LegalMove | null> {
     const factory = this.opts.engineRunnerFactory;
     if (!factory) return null;
-    const profileId = this.opts.rules.gameType === 'chess' ? 'stockfish' : 'pikafish';
+    const profileId = 'pikafish';
     this.hintRunner ??= await factory({ profileId, strengthLevel: 20 });
     try {
       const pos = this.engineSearchPosition();

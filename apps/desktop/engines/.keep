@@ -1,0 +1,2 @@
+Placeholder so Tauri's bundle resources path (../engines) exists on a fresh clone.
+Real engine binaries are staged here by `pnpm stage:engines` (see scripts/stage-engines.mjs).

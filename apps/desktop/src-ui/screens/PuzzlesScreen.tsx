@@ -1,10 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import type { Puzzle } from '@chesslab/puzzles';
-import { CHESS_PUZZLES, XIANGQI_PUZZLES, CHESS_LARGE_PUZZLES, XIANGQI_LARGE_PUZZLES } from '@chesslab/puzzles';
+import type { Puzzle } from '@chessnext/puzzles';
+import { CURATED_PUZZLES, LARGE_PUZZLES } from '@chessnext/puzzles';
 import { TopBar } from '../components/GameChrome';
 import { usePuzzleProgress } from '../state/puzzles';
 
-type Tab = 'xiangqi' | 'chess';
 type Mode = 'curated' | 'large';
 
 const HUB = {
@@ -22,7 +21,6 @@ const HUB = {
 
 export function PuzzlesScreen(props: { onBack(): void; onPick(p: Puzzle): void }) {
   const [mode, setMode] = useState<Mode>('curated');
-  const [tab, setTab] = useState<Tab>('xiangqi');
 
   const hubTheme = {
     bg: HUB.bg,
@@ -37,7 +35,7 @@ export function PuzzlesScreen(props: { onBack(): void; onPick(p: Puzzle): void }
     board: { frame: '', frameBorder: '', lightSquare: '', darkSquare: '', line: '', coordText: '' },
     highlight: { selected: '', targetDot: '', lastMoveFrom: '', lastMoveTo: '', hint: '', checkKing: '' },
     pieces: { w: { fg: '', border: '', shadow: '' }, b: { fg: '', border: '', shadow: '' } },
-    gameType: tab,
+    gameType: 'xiangqi' as const,
     displayName: '残局',
     subtitle: '',
   } as any;
@@ -46,22 +44,19 @@ export function PuzzlesScreen(props: { onBack(): void; onPick(p: Puzzle): void }
     <div style={{ height: '100%', backgroundColor: HUB.bg, display: 'flex', flexDirection: 'column' }}>
       <TopBar theme={hubTheme} title="残局" subtitle={mode === 'curated' ? '精选练习' : '题库'} onBack={props.onBack} />
 
-      {/* 顶部：模式分段（单胶囊容器）+ 棋种文字标签，避免四颗大胶囊 */}
-      <div style={{ padding: '12px 16px 0', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center', borderBottom: '1px solid rgba(0,0,0,0.06)', backgroundColor: HUB.bg }}>
-        {/* 模式：iOS 分段 */}
+      {/* 顶部：模式分段（单胶囊容器） */}
+      <div style={{ padding: '12px 16px 14px', display: 'flex', justifyContent: 'center', borderBottom: '1px solid rgba(0,0,0,0.06)', backgroundColor: HUB.bg }}>
         <Segmented
           value={mode}
           onChange={setMode}
           options={[
-            { value: 'curated', label: '精选', count: CHESS_PUZZLES.length + XIANGQI_PUZZLES.length },
-            { value: 'large', label: '题库', count: CHESS_LARGE_PUZZLES.length + XIANGQI_LARGE_PUZZLES.length },
+            { value: 'curated', label: '精选', count: CURATED_PUZZLES.length },
+            { value: 'large', label: '题库', count: LARGE_PUZZLES.length },
           ]}
         />
-        {/* 棋种：文字标签 + 下划线，无胶囊 */}
-        <GameTabs tab={tab} onChange={setTab} mode={mode} />
       </div>
 
-      {mode === 'curated' ? <CuratedList tab={tab} onPick={props.onPick} /> : <LargeList tab={tab} onPick={props.onPick} />}
+      {mode === 'curated' ? <CuratedList onPick={props.onPick} /> : <LargeList onPick={props.onPick} />}
     </div>
   );
 }
@@ -99,39 +94,9 @@ function Segmented(props: { value: Mode; onChange(v: Mode): void; options: { val
   );
 }
 
-function GameTabs(props: { tab: Tab; onChange(t: Tab): void; mode: Mode }) {
-  const xCount = props.mode === 'curated' ? XIANGQI_PUZZLES.length : XIANGQI_LARGE_PUZZLES.length;
-  const cCount = props.mode === 'curated' ? CHESS_PUZZLES.length : CHESS_LARGE_PUZZLES.length;
-  const Item = ({ active, label, count, onClick }: { active: boolean; label: string; count: number; onClick(): void }) => (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 2,
-        padding: '10px 0 8px',
-        borderBottom: `2px solid ${active ? HUB.accent : 'transparent'}`,
-        marginBottom: -1,
-      }}
-    >
-      <span style={{ fontSize: 13, fontWeight: active ? 700 : 500, color: active ? HUB.text : HUB.muted }}>{label}</span>
-      <span style={{ fontSize: 10, color: HUB.muted }}>{count}题</span>
-    </button>
-  );
-  return (
-    <div style={{ display: 'flex', width: 280, gap: 0, borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-      <Item active={props.tab === 'xiangqi'} label="中国象棋" count={xCount} onClick={() => props.onChange('xiangqi')} />
-      <Item active={props.tab === 'chess'} label="国际象棋" count={cCount} onClick={() => props.onChange('chess')} />
-    </div>
-  );
-}
-
-function CuratedList(props: { tab: Tab; onPick(p: Puzzle): void }) {
+function CuratedList(props: { onPick(p: Puzzle): void }) {
   const { progress, reset } = usePuzzleProgress();
-  const puzzles = props.tab === 'xiangqi' ? XIANGQI_PUZZLES : CHESS_PUZZLES;
+  const puzzles = CURATED_PUZZLES;
   const solved = puzzles.filter(p => progress.solved[p.id]).length;
 
   const grouped = useMemo(() => {
@@ -219,9 +184,9 @@ function CuratedList(props: { tab: Tab; onPick(p: Puzzle): void }) {
   );
 }
 
-function LargeList(props: { tab: Tab; onPick(p: Puzzle): void }) {
+function LargeList(props: { onPick(p: Puzzle): void }) {
   const { progress } = usePuzzleProgress();
-  const all = props.tab === 'xiangqi' ? XIANGQI_LARGE_PUZZLES : CHESS_LARGE_PUZZLES;
+  const all = LARGE_PUZZLES;
 
   const [query, setQuery] = useState('');
   const [diff, setDiff] = useState<number | null>(null);

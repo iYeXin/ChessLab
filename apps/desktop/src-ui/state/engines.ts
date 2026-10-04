@@ -1,24 +1,34 @@
 import { invoke } from '@tauri-apps/api/core';
 import {
   PIKAFISH_PROFILE,
-  STOCKFISH_PROFILE,
   UciEngineDriver,
-  getProfile,
+  engineOptionsStrategy,
+  hostWeakenedStrategy,
   type EngineProfile,
+  type EngineTurnStrategy,
+  type GoLimits,
   type UciOptionValue,
-} from '@chesslab/engine-uci';
-import type { AssistEngineFactory, EngineRunnerFactory } from '@chesslab/game-session';
-import type { GameType } from '@chesslab/rules-core';
+} from '@chessnext/engine-uci';
+import { createOnnxRunner } from '@chessnext/engine-onnx';
+import type { AssistEngineFactory, EngineRunnerFactory } from '@chessnext/game-session';
+import { XiangqiRules } from '@chessnext/rules-xiangqi';
 import { createTauriTransport } from '../transport/tauri';
+import { tierForLevel } from './difficulty';
+import { getTierSession } from './onnx';
+import type { EngineMode, Mode2LevelOverride, Mode2Overrides, OnnxTemperatureId } from './settings';
 
 /**
- * Tauri desktop engine wiring (Phase W2).
+ * Engine wiring for every difficulty mode.
  *
- * Mirrors `apps/chessapp/src/state/engines.ts` but uses the Tauri process
- * bridge (`engines.rs`) instead of the RN TurboModule.
+ *  mode 1/2 — a Pikafish OS process driven over UCI (Rust bridge in
+ *             `src-tauri/src/engines.rs`); the mode only changes the strategy
+ *             object handed to `createUciRunner`.
+ *  mode 3   — the research ONNX tier model, running inside the WebView.
  *
- * Process budget per game: opponent (1) + assist (1) + hint (1, lazy).
+ * Process budget per game (modes 1/2): opponent (1) + assist (1) + hint (1, lazy).
  */
+
+const ENGINE_ID = 'pikafish';
 
 let nnuePathPromise: Promise<string | null> | null = null;
 
@@ -37,10 +47,7 @@ async function resolveNnuePath(): Promise<string | null> {
 }
 
 /** Extra options required before first search (Pikafish NNUE path). */
-export async function platformOptionsFor(
-  profileId: 'stockfish' | 'pikafish',
-): Promise<Record<string, UciOptionValue>> {
-  if (profileId !== 'pikafish') return {};
+export async function platformOptions(): Promise<Record<string, UciOptionValue>> {
   const nnue = await resolveNnuePath();
   if (!nnue) return {};
   return { EvalFile: nnue };
@@ -49,32 +56,31 @@ export async function platformOptionsFor(
 const assistDrivers = new Map<string, UciEngineDriver>();
 const gameDrivers = new Set<UciEngineDriver>();
 
-async function driverForAssist(profileId: 'stockfish' | 'pikafish'): Promise<UciEngineDriver> {
-  const key = `${profileId}:assist`;
-  const existing = assistDrivers.get(key);
+async function driverForAssist(): Promise<UciEngineDriver> {
+  const existing = assistDrivers.get(ENGINE_ID);
   if (existing && existing.isAlive) return existing;
-  const profile: EngineProfile = getProfile(profileId);
-  const extra = await platformOptionsFor(profileId);
-  assistDrivers.delete(key);
+  const profile: EngineProfile = PIKAFISH_PROFILE;
+  const extra = await platformOptions();
+  assistDrivers.delete(ENGINE_ID);
   const driver = new UciEngineDriver(profile);
-  const transport = await createTauriTransport(profileId);
+  const transport = await createTauriTransport(ENGINE_ID);
   await driver.start(transport);
   if (Object.keys(extra).length > 0) await driver.setOptions(extra);
   await driver.newGame();
-  assistDrivers.set(key, driver);
+  assistDrivers.set(ENGINE_ID, driver);
   return driver;
 }
 
-async function createGameDriver(profileId: 'stockfish' | 'pikafish'): Promise<UciEngineDriver> {
-  const profile: EngineProfile = getProfile(profileId);
-  const extra = await platformOptionsFor(profileId);
+async function createGameDriver(): Promise<UciEngineDriver> {
+  const profile: EngineProfile = PIKAFISH_PROFILE;
+  const extra = await platformOptions();
   const driver = new UciEngineDriver(profile);
-  const transport = await createTauriTransport(profileId);
+  const transport = await createTauriTransport(ENGINE_ID);
   await driver.start(transport);
   if (Object.keys(extra).length > 0) await driver.setOptions(extra);
   await driver.newGame();
   gameDrivers.add(driver);
-  // Remove from set when quit
+  // Remove from the set when quit
   const origQuit = driver.quit.bind(driver);
   driver.quit = async () => {
     gameDrivers.delete(driver);
@@ -83,26 +89,67 @@ async function createGameDriver(profileId: 'stockfish' | 'pikafish'): Promise<Uc
   return driver;
 }
 
-function profileIdFor(gameType: GameType): 'stockfish' | 'pikafish' {
-  return gameType === 'chess' ? 'stockfish' : 'pikafish';
+/** Only the numeric search-budget fields of a mode 2 override. */
+function overrideLimits(o: Mode2LevelOverride): GoLimits | undefined {
+  const limits: GoLimits = {};
+  if (typeof o.movetimeMs === 'number') limits.movetimeMs = o.movetimeMs;
+  if (typeof o.nodes === 'number') limits.nodes = o.nodes;
+  if (typeof o.depth === 'number') limits.depth = o.depth;
+  return Object.keys(limits).length > 0 ? limits : undefined;
 }
 
-/** Session-layer factories bound to this game type. */
-export function makeSessionFactories(gameType: GameType): {
+export interface SessionEngineConfig {
+  engineMode: EngineMode;
+  /** Mode 2 per-level custom values, keyed by engine level. */
+  mode2?: Mode2Overrides;
+  /** Mode 3 move-choice temperature preset. */
+  onnxTemperature?: OnnxTemperatureId;
+  /** Mode 3 mate guard. */
+  onnxMateGuard?: boolean;
+}
+
+/**
+ * Session-layer factories for the selected mode.
+ *
+ * `analysisFactory` is omitted for mode 3: the ONNX graph exposes policy +
+ * value only, with no deepening MultiPV stream to drive an assist panel.
+ */
+export function makeSessionFactories(cfg: SessionEngineConfig): {
   engineRunnerFactory: EngineRunnerFactory;
-  analysisFactory: AssistEngineFactory;
+  analysisFactory?: AssistEngineFactory;
 } {
-  const pid = profileIdFor(gameType);
+  if (cfg.engineMode === 3) {
+    return {
+      engineRunnerFactory: async ({ strengthLevel }) => {
+        const tier = tierForLevel(strengthLevel);
+        const session = await getTierSession(tier);
+        return createOnnxRunner({
+          session,
+          createRules: fen => new XiangqiRules(fen),
+          temperaturePreset: cfg.onnxTemperature ?? 'play',
+          mateGuard: cfg.onnxMateGuard ?? true,
+        });
+      },
+    };
+  }
+
+  const strategyFor = (strengthLevel: number): EngineTurnStrategy => {
+    if (cfg.engineMode !== 2) return hostWeakenedStrategy();
+    const override = cfg.mode2?.[String(strengthLevel)];
+    if (!override) return engineOptionsStrategy();
+    const limits = overrideLimits(override);
+    return engineOptionsStrategy({ options: override.options, ...(limits ? { limits } : {}) });
+  };
 
   return {
-    engineRunnerFactory: async () => {
-      const driver = await createGameDriver(pid);
-      const { createUciRunner } = await import('@chesslab/game-session');
-      return createUciRunner(driver);
+    engineRunnerFactory: async ({ strengthLevel }) => {
+      const driver = await createGameDriver();
+      const { createUciRunner } = await import('@chessnext/game-session');
+      return createUciRunner(driver, strategyFor(strengthLevel));
     },
     analysisFactory: async () => {
-      const { createUciAssistEngine } = await import('@chesslab/game-session');
-      const driver = await driverForAssist(pid);
+      const { createUciAssistEngine } = await import('@chessnext/game-session');
+      const driver = await driverForAssist();
       return createUciAssistEngine(driver);
     },
   };
@@ -116,4 +163,4 @@ export async function shutdownEngines(): Promise<void> {
   gameDrivers.clear();
 }
 
-export { PIKAFISH_PROFILE, STOCKFISH_PROFILE };
+export { PIKAFISH_PROFILE };

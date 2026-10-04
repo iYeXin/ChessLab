@@ -3,11 +3,11 @@ import { parseUciLine, uciCommands } from '../src/protocol';
 
 describe('parseUciLine', () => {
   it('parses engine id', () => {
-    const ev = parseUciLine('id name Stockfish 18');
-    expect(ev).toEqual({ kind: 'id', name: 'Stockfish 18' });
-    expect(parseUciLine('id author the Stockfish developers')).toEqual({
+    const ev = parseUciLine('id name Pikafish 2026-01-02');
+    expect(ev).toEqual({ kind: 'id', name: 'Pikafish 2026-01-02' });
+    expect(parseUciLine('id author the Pikafish developers')).toEqual({
       kind: 'id',
-      author: 'the Stockfish developers',
+      author: 'the Pikafish developers',
     });
   });
 
@@ -30,7 +30,7 @@ describe('parseUciLine', () => {
   });
 
   it('parses multi-word option names and defaults', () => {
-    // Real-world shape from Stockfish / Pikafish.
+    // Real-world shape from Pikafish.
     const ev = parseUciLine(
       'option name EvalFile type string default nn-b1a57edbea57.nnue',
     );
@@ -124,8 +124,8 @@ describe('uciCommands', () => {
 
   it('builds setoption commands', () => {
     expect(uciCommands.setOption('Hash', 256)).toBe('setoption name Hash value 256');
-    expect(uciCommands.setOption('UCI_LimitStrength', true)).toBe(
-      'setoption name UCI_LimitStrength value true',
+    expect(uciCommands.setOption('EvalFile', 'pikafish.nnue')).toBe(
+      'setoption name EvalFile value pikafish.nnue',
     );
   });
 });

@@ -1,4 +1,4 @@
-import type { GameResult, MoveUci, Side } from '@chesslab/rules-core';
+import type { GameResult, MoveUci, Side } from '@chessnext/rules-core';
 
 /**
  * Repetition adjudication for xiangqi (重复局面裁决 — 长将判负).

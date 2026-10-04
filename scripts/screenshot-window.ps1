@@ -1,5 +1,5 @@
 # screenshot-window.ps1 - bring a process's main window to front and capture it.
-# Usage: powershell -File screenshot-window.ps1 -ProcessName chessapp -OutFile shot.png
+# Usage: powershell -File screenshot-window.ps1 -ProcessName chessnext -OutFile shot.png
 
 param(
     [Parameter(Mandatory=$true)][string]$ProcessName,

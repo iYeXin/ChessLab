@@ -1,5 +1,5 @@
-import type { EngineInfo, GoLimits, UciEngineDriver } from '@chesslab/engine-uci';
-import type { MoveUci } from '@chesslab/rules-core';
+import type { EngineInfo, GoLimits, UciEngineDriver } from '@chessnext/engine-uci';
+import type { MoveUci } from '@chessnext/rules-core';
 
 /**
  * Assisted-play analysis ("辅助着棋") backend.

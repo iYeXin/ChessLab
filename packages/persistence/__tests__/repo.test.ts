@@ -33,7 +33,7 @@ describe('MemoryGameRepository', () => {
 
 describe('NodeFileGameRepository', () => {
   it('round-trips records through the filesystem', async () => {
-    const dir = join(mkdtempSync(join(tmpdir(), 'chesslab-')), 'games');
+    const dir = join(mkdtempSync(join(tmpdir(), 'chessnext-')), 'games');
     const repo = new NodeFileGameRepository(dir);
     await repo.save(sample());
 

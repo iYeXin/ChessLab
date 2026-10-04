@@ -1,5 +1,5 @@
 /**
- * Chess clock with injected timer for testability.
+ * Game clock with injected timer for testability.
  * Tracks remaining ms per side; flags the side whose time runs out.
  */
 

@@ -7,6 +7,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/
 
 ## [Unreleased]
 
+## [0.4.0-alpha] - 2026-08-27
+
+**实验性 / 研究性分支**：由双棋种应用裁剪为**单一棋种（中国象棋）**，修复上一版遗留的一批缺陷，并加入**三套棋力方案**与**测试人员模式**。
+
+### Added — 三套棋力方案（第二轮）
+
+- **`EngineTurnStrategy` 抽象缝**（`packages/engine-uci`）：`TurnPlan { options, spec }`，runner 只按策略下发的选项与搜索限制执行，因此同一 runner 可服务所有模式
+  - `hostWeakenedStrategy()` —— 模式 1（默认）：搜索预算（`nodes` + `depth` + `movetime` 帽）+ 近分 MultiPV 随机 + 防重复护栏，机制与上一版一致
+  - `engineOptionsStrategy(overrides)` —— 模式 2：直接下发引擎原生棋力选项，`multiPv: 1` 故不做任何主机侧随机
+- **模式 2 的可自定义选项**：`PIKAFISH_STRENGTH_OPTIONS` 表驱动（14 项，含 `type` / `min` / `max` / `vars` / `defaultValue`，逐项由 `pikafish-avx2.exe` → `uci` 实测转录）；`engineOptionPresetForLevel()` 把 5 个档位线性映射到引擎上报的 `UCI_Elo` 区间（1350–2850），用户覆盖优先，越界值夹到边界
+- **`packages/engine-onnx`（新模式 3）**：档位模型 T1–T5 的纯 TS 接入层
+  - `encoding.ts`：`rank*9+file` 方格编码、`from*90+to` 着法索引、**黑方行棋时的三重归一化**（棋盘旋转 180° + 红黑互换 + 着法索引 `8099 - m`）、`[1,17,10,9]` 平面构造、**模型视角**的合法掩码 softmax
+  - `temperature.ts`：研究侧实测的温度预设（`play` / `arena` / `greedy`，按 ply 分段）
+  - `mate.ts` + `runner.ts`：杀棋守卫（一步杀必走扫描**全部**合法着法；避免被一步杀，候选窗口有界）+ 概率采样
+  - `tiers.ts`：T1–T5 元数据（训练量 / 离线指标）与难度→档位映射
+- **应用侧模型加载**（`state/onnx.ts`）：`onnxruntime-web` 1.30，后端顺序固定 **WebGPU → WASM**，WASM 运行时本地随包（无 CDN）；会话按档位缓存复用
+- **`scripts/fetch-assets.mjs` / `pnpm fetch:assets`**：把 5 个 fp16 档位模型（23.2 MB）与 onnxruntime 运行时（40.6 MB）拷入 `apps/desktop/public/`（已 gitignore）
+- **测试人员模式**（设置页「实验功能」）：开启后，对局配置的「难度」「黑方棋力」与残局页的「难度」都改为弹出 `DifficultyModal`，其中统一选择棋力方案（1/2/3）、档位与该方案的具体设置；关闭后恢复原来的内联胶囊选择，已保存的方案继续生效
+- `DifficultyPicker` 组件：把"内联胶囊 / 模态框"两种形态收敛到一处，三个调用点行为一致
+- 新增测试：`engine-onnx` 两个套件共 27 例（含**专门针对 `8099 - m` 翻转**、黑方行棋、掩码只落在合法着法、杀棋守卫优先级）与 `engine-uci` 棋力模式 10 例（Elo 区间单调、越界夹取、覆盖优先、空值剔除）
+
+### Changed — 第二轮
+
+- **应用与包标识改名**：`ChessLab` → `ChessNext`（66 个文本文件）
+  - npm 作用域 `@chesslab/*` → `@chessnext/*`（含两处 tsconfig `paths`）
+  - Android `com.chesslab.app` → `com.chessnext.app`（`namespace` / `applicationId` / Kotlin 包目录 / `Theme.chessnext`）；`TAURI_ANDROID_PACKAGE_NAME_PREFIX` 随之变为 `com_chessnext`
+  - Rust crate `chesslab` → `chessnext`，lib `chesslab_lib` → `chessnext_lib`（含 `engines.rs` 中按 `libchessnext_lib.so` 扫 `/proc/self/maps` 的硬编码串）
+  - 存储键 `chesslab.settings.v1` → `chessnext.settings.v1`、`chesslab.puzzles.progress.v1` → `chessnext.puzzles.progress.v1`
+  - 产物名 `ChessNext-<版本>-*`（`build.js` 与 `release.yml` 的 glob 同步）；窗口标题 `ChessNext 中国象棋`
+  - 上游仓库 URL 保持不变
+- **引擎版本**：Pikafish 2026-01-02 → **2023-03-05**（`.zip`），体积 24.3 MB / NNUE 17.2 MB；`fetch-engines.ps1` 改为从 zip 提取，跨平台（`Expand-Archive` / `unzip` / `tar`）
+- `EngineProfile` 恢复 `supportsLimitStrength` / `supportsSkillLevel` 能力位（上一轮因只剩无此能力的版本而移除）
+- `pnpm-workspace.yaml`：允许 `protobufjs` 的安装脚本（`onnxruntime-web` 的传递依赖）
+- 难度/等级映射抽出到 `state/difficulty.ts`（含 `tierForLevel`），消除 hook 与引擎工厂之间的重复常量
+
+### Verified — 第二轮
+
+- `pnpm typecheck`、`apps/desktop` `tsc --noEmit`、`cargo check` 全部通过
+- `pnpm test`：**12 套件 / 116 用例全绿**
+- `pnpm smoke:engines`：新增模式 2 校验——确认引擎确实上报 `UCI_LimitStrength` / `UCI_Elo 1350..2850` / `Skill Level 0..20`，并在 Elo 1350 与 2850 下各搜索一次、校验着法合法（实测 1350 → `h2e2`、2850 → `b2e2`）
+- `pnpm probe:perft 4 --divide`：与 **2023-03-05** 逐根着法完全一致（3,290,240）
+- `pnpm build:frontend`：含 ONNX 模式构建通过
+
+### Removed — 第一轮
+
+- **国际象棋全部内容**：`packages/rules-chess`（chess.js 封装）整包删除；`ChessBoardView`；国象题库（精选 12 + 题库 80）；国象精选样例 `docs/puzzles/chess_curated_sample.json`；`images/chess-cropped.jpg`；`chessBoardStyle` 设置项与 `.theme-chess` 主题；`GameEndReason` 中仅国象可达的 `stalemate` / `fifty-move-rule`；`PieceType` 中的 `q`；`LegalMove.promotion`（象棋无升变）
+- **Stockfish**：引擎档案与 `computeStrengthOptions`（`UCI_LimitStrength` / `UCI_Elo` / `Skill Level` 均为 Stockfish 特性）；`fetch-engines.ps1` / `smoke-engines.ts` / `probe-perft.ts` / `build.js` / `engines.rs` / 诊断页 / 发布工作流中的所有 Stockfish 路径
+- **`packages/engine-process`**：React Native 时代遗留的传输层，桌面端从未引用（其 `resolveTransportFactory` 会 `require('react-native')`）
+- 依赖：`chess.js`、`sharp`（仅被已删除的图片脚本使用）、`@chessnext/rules-chess`、`@chessnext/engine-process`
+- 无用资源与残留：`apps/desktop/public/sounds/move.mp3`（从未被引用）、根目录 `.shot1.png`、`scripts/crop-readme-images.js` 与 `scripts/make-android-foreground.js`（硬编码 `E:/Workspaces/chess` 绝对路径，且输入资源不在仓库内）、`docs/01-tech-selection.md`（已被 02 取代的历史存档）
+
+### Fixed
+
+- **规则库 perft 计数缺陷**（此前被文档化为「已知上游分歧」）：vendor 的 `perft()` 用**伪合法**着法生成后判断 `king_attacked(turn)`，而 `make_move` 已把 `turn` 翻转为对手，于是既计入了「送将」的非法着法、又丢弃了「将军」的合法着法。`XiangqiRules.perft()` 改为遍历已验证的合法着法列表：depth 3 由 79446 修正为 **79666**，与 Pikafish 2026-01-02 逐根着法完全一致；新增 depth 4 对拍（3_290_240，44/44 一致）
+- `package.json`：`android` / `windows` / `start` 三条脚本指向 v0.3.0 已删除的 `apps/chessapp`，必然失败 → 删除，并补上 `dev` / `build:frontend` / `probe:moves`
+- `scripts/sync-android-engines.ps1`：写入路径仍是已删除的 `apps/chessapp/android/...` → 改指向 `apps/desktop/src-tauri/gen/android/.../jniLibs`
+- 幻影依赖：`apps/desktop` 声明了从未 import 的 `@chessnext/engine-process` 与 `@chessnext/persistence` → 移除声明（前者整包删除，后者保留为未接入的接口层）
+- **安全**：自签名密钥 `gen/android/chessnext.jks` 连同一组硬编码口令入库 → 从版本控制移除并加入 `.gitignore`，改由 `build.js` 首次构建时生成，凭据支持 `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_PASSWORD` / `ANDROID_KEY_ALIAS` 覆盖
+- `scripts/bump-version.mjs`：版本已是目标值时误抛 `Cargo.toml version not found`（用「文本是否变化」代替「正则是否命中」判断）→ 修正
+- **`pnpm dev` 在新克隆上必定失败**：`tauri.conf.json` 声明 `bundle.resources: ["../engines"]`，而 Tauri 的构建脚本在资源路径不存在时直接报 `resource path ..\engines doesn't exist`；该目录又是 gitignore 的。现在新增 `scripts/stage-engines.mjs`（`pnpm stage:engines`，`pnpm dev` 与 `build.js` 共用同一实现），并用 `apps/desktop/engines/.keep` 让该目录在克隆后即存在
+- 落子音效三处重复（`sound.ts` 内联 base64 + `public/sounds/luozi.mp3` + 仓库根游离副本）→ 删除内联 base64（源文件由 ~9 KB 降至 3.4 KB）与未引用的 `move.mp3`，保留打包资源 + WebAudio 合成兜底
+- `scripts/screenshot-window.ps1` 用法注释仍写 `-ProcessName chessapp` → 改为 `chessnext`
+- 清理 8 个源文件中指向已删除 `apps/chessapp/src/...` 的历史注释；`runner.ts` 中与现行策略矛盾的「stochastically pick a blunder candidate / Stockfish keeps its own UCI_Elo」注释
+
+### Changed
+
+- **版本 `0.3.3` → `0.4.0-alpha`**（10 处清单 + `Cargo.lock`）
+- `GameType` 收窄为 `'xiangqi'`；`RulesAdapter` 抽象与分层保持不变（单成员接缝），便于将来加回第二种棋
+- `persistence` 的 `PuzzleProgress` 形状与 UI 本地存储对齐，消除 `state/puzzles.ts` 中的重复接口定义
+- 测试改为全象棋并同步既有断言：`session.test.ts` / `assist.test.ts` / `driver.test.ts` / `protocol.test.ts` / `puzzles.test.ts` / `xiangqi.test.ts`（含新增 perft(4)）；**10 套件 89 用例全绿**
+- 引擎脚本与文档统一为皮卡鱼单引擎口径（`fetch-engines.ps1` / `sync-android-engines.ps1` / `engine-paths.ts` / `smoke-engines.ts` / `build.js` / `engines.rs`）
+- `probe-perft.ts` 重写：新增 `--divide` 逐根着法对拍；新增 `scripts/probe-moves.ts` 用于比对指定局面下的合法着法列表
+- 首页改为单一棋种卡片，并加一行小字「实验性版本 · 仅供研究」；窗口标题改为「中国象棋 实验版」
+- 文档：`README.md` 重写为象棋单棋种版；`licenses/README.md` 去掉 Stockfish / chess.js / Lichess 条目；`docs/02-tauri-migration.md` 重写为架构与决策记录；`docs/puzzles/README.md` 精简为象棋题库调研
+
+### Verified
+
+- `pnpm typecheck` 全仓通过（含 `apps/desktop`）
+- `pnpm test`：10 套件 / 89 用例全绿
+- `pnpm smoke:engines`：真实 Pikafish 2026-01-02 握手 → EvalFile → 搜索 → 合法着法校验通过
+- `pnpm probe:perft 4 --divide`：与引擎逐根着法完全一致
+
+### Known limitations
+
+- 长捉（`perpetual-chase`）仍一律按和棋处理
+- 双方均禁（双长将等）按和棋处理，未细分「先提议变着」/ 双负
+- 残局 `solution` 仅为参考着法，**不是**单步杀着（早期「基本杀法 · 单步可解」注释与实际数据不符，已更正）
+- `persistence` 仍未接入 UI：无对局存储 / 无棋谱导出
+
 ## [0.3.3] - 2026-08-26
 
 ### Added
@@ -67,6 +156,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/
 - 10 项打磨：设置持久化、棋盘质感、记谱切换、观战自动/步进等
 
 [Unreleased]: https://github.com/iYeXin/ChessLab/compare/v0.3.3...HEAD
+[0.4.0-alpha]: https://github.com/iYeXin/ChessLab/compare/v0.3.3...HEAD
 [0.3.3]: https://github.com/iYeXin/ChessLab/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/iYeXin/ChessLab/compare/v0.3.0...v0.3.2
 [0.3.0]: https://github.com/iYeXin/ChessLab/releases/tag/v0.3.0

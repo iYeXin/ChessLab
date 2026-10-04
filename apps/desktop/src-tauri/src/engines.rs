@@ -30,7 +30,7 @@ static NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new
 // ---------------------------------------------------------------------------
 
 fn resolve_binary(app: &AppHandle, profile: &str) -> Result<std::path::PathBuf, String> {
-    // 0. Android: nativeLibraryDir (jniLibs) — libstockfish.so etc.
+    // 0. Android: nativeLibraryDir (jniLibs) — libpikafish.so
     #[cfg(target_os = "android")]
     {
         if let Some(native_dir) = get_android_native_library_dir() {
@@ -81,7 +81,6 @@ fn resolve_binary(app: &AppHandle, profile: &str) -> Result<std::path::PathBuf, 
                     for engines_dir in [
                         cur.join("apps/desktop/engines"),
                         cur.join("apps/desktop/src-tauri/target/debug/engines"),
-                        cur.join("third_party/engines/windows-x64/stockfish"),
                         cur.join("third_party/engines/windows-x64/pikafish"),
                         cur.join("third_party/engines/windows-x64/pikafish/Windows"),
                     ] {
@@ -114,7 +113,6 @@ fn resolve_binary(app: &AppHandle, profile: &str) -> Result<std::path::PathBuf, 
     let mut cur = cwd.clone();
     for _ in 0..5 {
         for base in [
-            cur.join("third_party/engines/windows-x64/stockfish"),
             cur.join("third_party/engines/windows-x64/pikafish"),
             cur.join("third_party/engines/windows-x64/pikafish/Windows"),
             cur.join("apps/desktop/engines"),
@@ -152,7 +150,6 @@ fn binary_name(profile: &str) -> String {
     #[cfg(target_os = "android")]
     {
         return match profile {
-            "stockfish" => "libstockfish.so".to_string(),
             "pikafish" => "libpikafish.so".to_string(),
             other => format!("lib{}.so", other),
         };
@@ -160,7 +157,6 @@ fn binary_name(profile: &str) -> String {
     #[cfg(not(target_os = "android"))]
     {
         return match profile {
-            "stockfish" => "stockfish.exe".to_string(),
             "pikafish" => "pikafish.exe".to_string(),
             other => format!("{}.exe", other),
         };
@@ -178,24 +174,24 @@ fn get_android_native_library_dir() -> Option<std::path::PathBuf> {
                 let p = std::path::PathBuf::from(fname);
                 if let Some(dir) = p.parent() {
                     // When extractNativeLibs=true, the .so lives directly in .../lib/arm64
-                    if dir.join("libstockfish.so").exists() || dir.join("libpikafish.so").exists() {
+                    if dir.join("libpikafish.so").exists() {
                         return Some(dir.to_path_buf());
                     }
                     // When the .so is inside the APK (extractNativeLibs=false fallback),
-                    // dli_fname may be ".../base.apk!/lib/arm64-v8a/libchesslab_lib.so" — try sibling.
+                    // dli_fname may be ".../base.apk!/lib/arm64-v8a/libchessnext_lib.so" — try sibling.
                 }
             }
         }
     }
 
-    // 2) /proc/self/maps fallback: find any line containing libchesslab_lib.so
+    // 2) /proc/self/maps fallback: find any line containing libchessnext_lib.so
     if let Ok(maps) = std::fs::read_to_string("/proc/self/maps") {
         for line in maps.lines() {
-            if line.contains("libchesslab_lib.so") {
+            if line.contains("libchessnext_lib.so") {
                 if let Some(path) = line.rsplit(' ').next() {
                     let p = std::path::PathBuf::from(path.trim());
                     if let Some(dir) = p.parent() {
-                        if dir.join("libstockfish.so").exists() || dir.join("libpikafish.so").exists() {
+                        if dir.join("libpikafish.so").exists() {
                             return Some(dir.to_path_buf());
                         }
                     }
@@ -207,7 +203,7 @@ fn get_android_native_library_dir() -> Option<std::path::PathBuf> {
     // 3) current_exe parent (works on some ROMs where app_process is symlink? keep for completeness)
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            if dir.join("libstockfish.so").exists() || dir.join("libpikafish.so").exists() {
+            if dir.join("libpikafish.so").exists() {
                 return Some(dir.to_path_buf());
             }
         }

@@ -310,8 +310,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
-name = "chesslab"
-version = "0.3.0"
+name = "chessnext"
+version = "0.4.0-alpha"
 dependencies = [
  "jni",
  "libc",

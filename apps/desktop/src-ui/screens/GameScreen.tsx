@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { GameType, Piece, Side, Square } from '@chesslab/rules-core';
-import { themeClassFor, themeFor } from '../theme/games';
-import { ChessBoardView } from '../components/ChessBoardView';
+import type { Piece, Side, Square } from '@chessnext/rules-core';
+import { XIANGQI_THEME, THEME_CLASS } from '../theme/games';
 import { XiangqiBoardView } from '../components/XiangqiBoardView';
 import {
   AssistPanel,
@@ -14,26 +13,33 @@ import {
   reasonText,
   type ControlDef,
 } from '../components/GameChrome';
-import { useGameSession } from '../state/useGameSession';
+import { useGameSession, type StartConfig } from '../state/useGameSession';
 import { makeSessionFactories, shutdownEngines } from '../state/engines';
 import { useSettings } from '../state/settings';
 import { playMoveSound } from '../game/sound';
-import type { StartConfig } from './HomeScreen';
 
 const DIFF_LABEL = ['', '入门', '业余', '进阶', '大师', '特级'] as const;
 
 export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
   const { cfg } = props;
-  const theme = themeFor(cfg.gameType);
+  const theme = XIANGQI_THEME;
   const { settings } = useSettings();
   const [gameKey, setGameKey] = useState(1);
   const [showResult, setShowResult] = useState(false);
   const [showFullHistory, setShowFullHistory] = useState(false);
-  const factories = useMemo(() => makeSessionFactories(cfg.gameType), [cfg.gameType]);
+  const factories = useMemo(
+    () =>
+      makeSessionFactories({
+        engineMode: settings.engineMode,
+        mode2: settings.mode2,
+        onnxTemperature: settings.onnxTemperature,
+        onnxMateGuard: settings.onnxMateGuard,
+      }),
+    [settings.engineMode, settings.mode2, settings.onnxTemperature, settings.onnxMateGuard],
+  );
 
   const { state, actions, capabilities, sessionRef } = useGameSession({
     gameKey,
-    gameType: cfg.gameType,
     mode: cfg.mode,
     humanSide: cfg.humanSide,
     difficulty: cfg.difficulty,
@@ -104,8 +110,8 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
     (from: Square, to: Square) => {
       const session = sessionRef.current;
       if (!session) return undefined;
-      const candidates = session.rules.moves({ square: from }).filter(m => m.to === to);
-      return candidates.find(m => m.promotion === 'q') ?? candidates[0];
+      // Xiangqi has no promotion: at most one legal move per from→to pair.
+      return session.rules.moves({ square: from }).find(m => m.to === to);
     },
     [sessionRef],
   );
@@ -251,17 +257,8 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
   const lastTo = (lastEntry ? lastEntry.uci.slice(2, 4) : null) as Square | null;
 
   const winnerSide = state.result?.winner ?? null;
-  // Side labels must never mix 红(chess) with 白(xiangqi): pick per game type.
   const sideWinLabel =
-    winnerSide === null
-      ? '和棋'
-      : cfg.gameType === 'xiangqi'
-        ? winnerSide === 'w'
-          ? '红方胜'
-          : '黑方胜'
-        : winnerSide === 'w'
-          ? '白方胜'
-          : '黑方胜';
+    winnerSide === null ? '和棋' : winnerSide === 'w' ? '红方胜' : '黑方胜';
   const resultHeadline =
     state.result === null
       ? ''
@@ -282,13 +279,13 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
       const d2 = DIFF_LABEL[cfg.difficultySecond ?? cfg.difficulty];
       return `观战 ${d1} vs ${d2} ${cfg.stepMode ? '· 步进' : '· 自动'}`;
     }
-    return `${DIFF_LABEL[cfg.difficulty]} · ${cfg.gameType === 'chess' ? 'STOCKFISH 18' : 'PIKAFISH'}`;
+    return `${DIFF_LABEL[cfg.difficulty]} · PIKAFISH`;
   })();
 
   const humanSideLabel = (() => {
     if (cfg.mode === 'pvp') return '双人';
     if (cfg.mode === 'eve') return '观战';
-    return cfg.gameType === 'chess' ? (cfg.humanSide === 'w' ? '执白' : '执黑') : cfg.humanSide === 'w' ? '执红' : '执黑';
+    return cfg.humanSide === 'w' ? '执红' : '执黑';
   })();
 
   // Move history rendering policy - item 3+4: hiddenDuringPlay uses modal, not inline
@@ -300,11 +297,10 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
     return state.history;
   }, [state.history, settings.moveHistoryMode, state.result]);
 
-  // For traditional notation, display is handled inside MoveListStrip/HistoryModal via gameType+notation prop
-  // No need to transform history here; the strip will generate traditional on the fly
+  // Traditional notation is generated on the fly inside MoveListStrip/HistoryModal.
 
   return (
-    <div className={themeClassFor(cfg.gameType)} style={{ height: '100%', backgroundColor: theme.bg, display: 'flex', flexDirection: 'column' }}>
+    <div className={THEME_CLASS} style={{ height: '100%', backgroundColor: theme.bg, display: 'flex', flexDirection: 'column' }}>
       <TopBar
         theme={theme}
         title={theme.displayName}
@@ -321,7 +317,6 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
         check={state.check}
         bootError={state.bootError}
         result={state.result}
-        gameType={cfg.gameType}
         isWatch={cfg.mode === 'eve'}
       />
 
@@ -335,39 +330,23 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
           justifyContent: 'center',
         }}
       >
-        {boardSize > 0 &&
-          (cfg.gameType === 'chess' ? (
-            <ChessBoardView
-              size={boardSize}
-              orientation={orientation}
-              pieces={state.pieces}
-              theme={theme}
-              selected={selected}
-              targets={settings.showLegalTargets ? targets : new Set()}
-              hint={hint}
-              lastFrom={lastFrom}
-              lastTo={lastTo}
-              flipOpponentPieces={settings.flipOpponentPieces}
-              polished={settings.chessBoardStyle === 'polished'}
-              onPressPoint={p => onPressPoint(`${p.file}${p.rank}`)}
-            />
-          ) : (
-            <XiangqiBoardView
-              size={boardSize}
-              orientation={orientation}
-              pieces={state.pieces}
-              theme={theme}
-              selected={selected}
-              targets={settings.showLegalTargets ? targets : new Set()}
-              lastFrom={lastFrom}
-              lastTo={lastTo}
-              hint={hint}
-              flipOpponentPieces={settings.flipOpponentPieces}
-              xiangqiFont={settings.xiangqiFont}
-              xiangqiTexture={settings.xiangqiTexture}
-              onPressPoint={p => onPressPoint(`${p.file}${p.rank}`)}
-            />
-          ))}
+        {boardSize > 0 && (
+          <XiangqiBoardView
+            size={boardSize}
+            orientation={orientation}
+            pieces={state.pieces}
+            theme={theme}
+            selected={selected}
+            targets={settings.showLegalTargets ? targets : new Set()}
+            lastFrom={lastFrom}
+            lastTo={lastTo}
+            hint={hint}
+            flipOpponentPieces={settings.flipOpponentPieces}
+            xiangqiFont={settings.xiangqiFont}
+            xiangqiTexture={settings.xiangqiTexture}
+            onPressPoint={p => onPressPoint(`${p.file}${p.rank}`)}
+          />
+        )}
       </div>
 
       {/* Assist area: fixed height to avoid jitter in 双机 */}
@@ -384,7 +363,7 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
       <ControlsBar theme={theme} controls={controls} />
 
       {showInlineStrip ? (
-        <MoveListStrip theme={theme} history={moveStripHistory} gameType={cfg.gameType} xiangqiNotation={settings.xiangqiNotation} />
+        <MoveListStrip theme={theme} history={moveStripHistory} xiangqiNotation={settings.xiangqiNotation} />
       ) : (
         <div style={{ height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: theme.surfaceAlt }}>
           <button type="button" onClick={() => setShowFullHistory(true)} style={{ color: theme.textSecondary, fontSize: 11, padding: '6px 12px' }}>
@@ -393,7 +372,7 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
         </div>
       )}
 
-      {showFullHistory ? <HistoryModal theme={theme} history={state.history} gameType={cfg.gameType} xiangqiNotation={settings.xiangqiNotation} onClose={() => setShowFullHistory(false)} /> : null}
+      {showFullHistory ? <HistoryModal theme={theme} history={state.history} xiangqiNotation={settings.xiangqiNotation} onClose={() => setShowFullHistory(false)} /> : null}
 
       <ResultOverlay
         visible={!!state.result && showResult}
@@ -401,7 +380,6 @@ export function GameScreen(props: { cfg: StartConfig; onExit(): void }) {
         headline={resultHeadline}
         detail={resultDetail}
         history={state.history}
-        gameType={cfg.gameType}
         xiangqiNotation={settings.xiangqiNotation}
         onNewGame={() => {
           setShowResult(false);

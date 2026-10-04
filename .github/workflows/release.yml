@@ -120,21 +120,21 @@ jobs:
         shell: pwsh
         run: |
           Get-ChildItem dist -File | Format-Table Name, Length
-          if (-not (Test-Path "dist/ChessLab-${{ needs.sanity.outputs.version }}-windows-x64-setup.exe")) { throw "setup.exe missing" }
+          if (-not (Test-Path "dist/ChessNext-${{ needs.sanity.outputs.version }}-windows-x64-setup.exe")) { throw "setup.exe missing" }
 
       - uses: actions/upload-artifact@v4
         with:
           name: dist-windows
           path: |
-            dist/ChessLab-*-windows-*
-            !dist/ChessLab-*-windows-x64-portable
+            dist/ChessNext-*-windows-*
+            !dist/ChessNext-*-windows-x64-portable
           if-no-files-found: error
           retention-days: 7
 
       - uses: actions/upload-artifact@v4
         with:
           name: dist-windows-portable-dir
-          path: dist/ChessLab-*-windows-x64-portable
+          path: dist/ChessNext-*-windows-x64-portable
           if-no-files-found: warn
           retention-days: 7
 
@@ -196,13 +196,13 @@ jobs:
       - name: Verify artifacts
         run: |
           ls -lh dist/
-          test -f "dist/ChessLab-${{ needs.sanity.outputs.version }}-android-universal.apk" || (echo "apk missing" && exit 1)
+          test -f "dist/ChessNext-${{ needs.sanity.outputs.version }}-android-universal.apk" || (echo "apk missing" && exit 1)
 
       - uses: actions/upload-artifact@v4
         with:
           name: dist-android
           path: |
-            dist/ChessLab-*-android-*
+            dist/ChessNext-*-android-*
           if-no-files-found: error
           retention-days: 7
 
@@ -265,16 +265,16 @@ jobs:
         uses: softprops/action-gh-release@v2  # JavaScript Action
         with:
           tag_name: ${{ needs.sanity.outputs.tag }}
-          name: ChessLab ${{ needs.sanity.outputs.tag }}
+          name: ChessNext ${{ needs.sanity.outputs.tag }}
           body: ${{ steps.changelog.outputs.notes }}
           draft: false
           prerelease: false
           files: |
-            dist/ChessLab-*-windows-x64-setup.exe
-            dist/ChessLab-*-windows-x64-portable.zip
-            dist/ChessLab-*-windows-x64-portable.exe
-            dist/ChessLab-*-android-universal.apk
-            dist/ChessLab-*-android-universal.aab
+            dist/ChessNext-*-windows-x64-setup.exe
+            dist/ChessNext-*-windows-x64-portable.zip
+            dist/ChessNext-*-windows-x64-portable.exe
+            dist/ChessNext-*-android-universal.apk
+            dist/ChessNext-*-android-universal.aab
           fail_on_unmatched_files: false
           generate_release_notes: false
         env:

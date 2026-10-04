@@ -1,8 +1,7 @@
 /*
- * Theme tokens — 1:1 port of apps/chessapp/src/theme (RN StyleSheet values).
- * Colors are exposed as CSS custom properties on the game root class
- * (.theme-chess / .theme-xiangqi); src-ui/theme/games.ts references them
- * via var(--...) so component logic stays framework-agnostic.
+ * Theme tokens. Colors are exposed as CSS custom properties on the game root
+ * class (`.theme-xiangqi`); src-ui/theme/games.ts references them via
+ * var(--...) so component logic stays framework-agnostic.
  */
 
 /* Game-agnostic layout tokens (was theme/tokens.ts). */

@@ -1,17 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Puzzle } from '@chesslab/puzzles';
-import { themeFor } from '../theme/games';
-import { ChessBoardView } from '../components/ChessBoardView';
+import type { Puzzle } from '@chessnext/puzzles';
+import { THEME_CLASS, XIANGQI_THEME, type GameTheme } from '../theme/games';
 import { XiangqiBoardView } from '../components/XiangqiBoardView';
+import { DifficultyPicker } from '../components/DifficultyPicker';
 import { HistoryModal, MoveListStrip, ResultOverlay, StatusBanner, TopBar, reasonText } from '../components/GameChrome';
 import { useSettings } from '../state/settings';
 import { useGameSession } from '../state/useGameSession';
 import { makeSessionFactories, shutdownEngines } from '../state/engines';
-import type { Piece, Side, Square } from '@chesslab/rules-core';
+import type { Piece, Side, Square } from '@chessnext/rules-core';
 import { usePuzzleProgress } from '../state/puzzles';
 import { playMoveSound } from '../game/sound';
-
-const DIFF_LABEL = ['', '入门', '业余', '进阶', '大师', '特级'] as const;
+import { difficultyLabel, type Difficulty } from '../state/difficulty';
 
 export function PuzzleScreen(props: {
   puzzle: Puzzle;
@@ -22,22 +21,30 @@ export function PuzzleScreen(props: {
   hasPrev: boolean;
 }) {
   const { puzzle } = props;
-  const theme = themeFor(puzzle.gameType);
+  const theme = XIANGQI_THEME;
   const { settings } = useSettings();
   const { markSolved } = usePuzzleProgress();
 
-  const [difficulty, setDifficulty] = useState<1 | 2 | 3 | 4 | 5>(puzzle.rating);
+  const [difficulty, setDifficulty] = useState<Difficulty>(puzzle.rating);
   const [gameKey, setGameKey] = useState(1);
   const [showResult, setShowResult] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [selected, setSelected] = useState<Square | null>(null);
   const [hint, setHint] = useState<{ from: Square; to: Square } | null>(null);
 
-  const factories = useMemo(() => makeSessionFactories(puzzle.gameType), [puzzle.gameType]);
+  const factories = useMemo(
+    () =>
+      makeSessionFactories({
+        engineMode: settings.engineMode,
+        mode2: settings.mode2,
+        onnxTemperature: settings.onnxTemperature,
+        onnxMateGuard: settings.onnxMateGuard,
+      }),
+    [settings.engineMode, settings.mode2, settings.onnxTemperature, settings.onnxMateGuard],
+  );
 
   const { state, actions, sessionRef } = useGameSession({
     gameKey,
-    gameType: puzzle.gameType,
     mode: 'pve',
     humanSide: puzzle.sideToMove,
     difficulty,
@@ -103,14 +110,14 @@ export function PuzzleScreen(props: {
     (from: Square, to: Square) => {
       const s = sessionRef.current;
       if (!s) return undefined;
-      const cands = s.rules.moves({ square: from }).filter(m => m.to === to);
-      return cands.find(m => m.promotion === 'q') ?? cands[0];
+      // Xiangqi has no promotion: at most one legal move per from→to pair.
+      return s.rules.moves({ square: from }).find(m => m.to === to);
     },
     [sessionRef],
   );
 
-  const handleSelectDifficulty = (d: 1 | 2 | 3 | 4 | 5) => {
-    if (d === difficulty) return;
+  const handleSelectDifficulty = (d: Difficulty) => {
+    if (d === difficulty || state.thinkingSide) return;
     setDifficulty(d);
     setSelected(null);
     setHint(null);
@@ -201,15 +208,15 @@ export function PuzzleScreen(props: {
   }, [state.result]);
 
   return (
-    <div className={`${theme.gameType === 'chess' ? 'theme-chess' : 'theme-xiangqi'}`} style={{ height: '100%', backgroundColor: theme.bg, display: 'flex', flexDirection: 'column' }}>
+    <div className={THEME_CLASS} style={{ height: '100%', backgroundColor: theme.bg, display: 'flex', flexDirection: 'column' }}>
       <TopBar
         theme={theme}
         title={puzzle.title}
-        subtitle={`${puzzle.gameType === 'chess' ? '国际象棋' : '中国象棋'} · ${DIFF_LABEL[difficulty]}`}
+        subtitle={`中国象棋 · ${difficultyLabel(difficulty)}`}
         onBack={handleBack}
         right={
           <span style={{ fontSize: 10, color: theme.textSecondary, paddingRight: 8 }}>
-            {humanSide === 'w' ? (puzzle.gameType === 'xiangqi' ? '执红' : '执白') : '执黑'}
+            {humanSide === 'w' ? '执红' : '执黑'}
           </span>
         }
       />
@@ -222,70 +229,35 @@ export function PuzzleScreen(props: {
         check={state.check}
         bootError={state.bootError}
         result={state.result}
-        gameType={puzzle.gameType}
       />
 
       {/* Difficulty selector */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderBottom: '1px solid rgba(0,0,0,0.06)', backgroundColor: theme.surfaceAlt, flexWrap: 'wrap' as const }}>
         <span style={{ fontSize: 11, color: theme.textSecondary, marginRight: 4 }}>难度</span>
-        {[1, 2, 3, 4, 5].map(n => (
-          <button
-            key={n}
-            type="button"
-            disabled={!!state.thinkingSide}
-            onClick={() => handleSelectDifficulty(n as 1 | 2 | 3 | 4 | 5)}
-            style={{
-              padding: '4px 10px',
-              borderRadius: 999,
-              fontSize: 11,
-              fontWeight: difficulty === n ? 700 : 400,
-              backgroundColor: difficulty === n ? theme.accent : theme.surface,
-              color: difficulty === n ? '#fff' : theme.textPrimary,
-              border: `1px solid ${difficulty === n ? theme.accent : theme.surfaceAlt}`,
-              opacity: state.thinkingSide ? 0.5 : 1,
-            }}
-          >
-            {DIFF_LABEL[n]}
-          </button>
-        ))}
-        <span style={{ flex: 1 }} />
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <DifficultyPicker label="残局难度" difficulty={difficulty} onChange={handleSelectDifficulty} />
+        </div>
         <span style={{ fontSize: 10, color: theme.textSecondary }}>{puzzle.themes.slice(0, 2).join(' · ')}</span>
       </div>
 
       <div ref={areaRef} style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-        {boardSize > 0 &&
-          (puzzle.gameType === 'chess' ? (
-            <ChessBoardView
-              size={boardSize}
-              orientation={orientation}
-              pieces={state.pieces}
-              theme={theme}
-              selected={selected}
-              targets={settings.showLegalTargets ? targets : new Set()}
-              hint={hint}
-              lastFrom={lastFrom}
-              lastTo={lastTo}
-              flipOpponentPieces={settings.flipOpponentPieces}
-              polished={settings.chessBoardStyle === 'polished'}
-              onPressPoint={p => onPressPoint(`${p.file}${p.rank}`)}
-            />
-          ) : (
-            <XiangqiBoardView
-              size={boardSize}
-              orientation={orientation}
-              pieces={state.pieces}
-              theme={theme}
-              selected={selected}
-              targets={settings.showLegalTargets ? targets : new Set()}
-              lastFrom={lastFrom}
-              lastTo={lastTo}
-              hint={hint}
-              flipOpponentPieces={settings.flipOpponentPieces}
-              xiangqiFont={settings.xiangqiFont}
-              xiangqiTexture={settings.xiangqiTexture}
-              onPressPoint={p => onPressPoint(`${p.file}${p.rank}`)}
-            />
-          ))}
+        {boardSize > 0 && (
+          <XiangqiBoardView
+            size={boardSize}
+            orientation={orientation}
+            pieces={state.pieces}
+            theme={theme}
+            selected={selected}
+            targets={settings.showLegalTargets ? targets : new Set()}
+            lastFrom={lastFrom}
+            lastTo={lastTo}
+            hint={hint}
+            flipOpponentPieces={settings.flipOpponentPieces}
+            xiangqiFont={settings.xiangqiFont}
+            xiangqiTexture={settings.xiangqiTexture}
+            onPressPoint={p => onPressPoint(`${p.file}${p.rank}`)}
+          />
+        )}
       </div>
 
       {/* Controls */}
@@ -309,7 +281,7 @@ export function PuzzleScreen(props: {
         </button>
       </div>
 
-      {showHistory ? <HistoryModal theme={theme} history={state.history} gameType={puzzle.gameType} xiangqiNotation={settings.xiangqiNotation} onClose={() => setShowHistory(false)} /> : null}
+      {showHistory ? <HistoryModal theme={theme} history={state.history} xiangqiNotation={settings.xiangqiNotation} onClose={() => setShowHistory(false)} /> : null}
 
       <ResultOverlay
         visible={!!state.result && showResult}
@@ -317,7 +289,6 @@ export function PuzzleScreen(props: {
         headline={resultHeadline}
         detail={resultDetail}
         history={state.history}
-        gameType={puzzle.gameType}
         xiangqiNotation={settings.xiangqiNotation}
         onNewGame={handleRestart}
         onClose={() => setShowResult(false)}
@@ -326,7 +297,7 @@ export function PuzzleScreen(props: {
   );
 }
 
-function Ctrl(props: { label: string; onPress(): void; disabled?: boolean; tone?: 'danger'; theme: ReturnType<typeof themeFor> }) {
+function Ctrl(props: { label: string; onPress(): void; disabled?: boolean; tone?: 'danger'; theme: GameTheme }) {
   return (
     <button
       type="button"

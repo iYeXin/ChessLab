@@ -4,7 +4,7 @@ import {
   GameSession,
   type AssistEngineFactory,
   type EngineRunnerFactory,
-} from '@chesslab/game-session';
+} from '@chessnext/game-session';
 import {
   type GameResult,
   type HistoryEntry,
@@ -13,25 +13,17 @@ import {
   type Piece,
   type Side,
   type Square,
-} from '@chesslab/rules-core';
-import { ChessRules } from '@chesslab/rules-chess';
-import { XiangqiRules } from '@chesslab/rules-xiangqi';
-import { CHESS_FILES, CHESS_RANKS, XQ_FILES, XQ_RANKS } from '../game/boards';
-import type { GameType } from '@chesslab/rules-core';
+} from '@chessnext/rules-core';
+import { XiangqiRules } from '@chessnext/rules-xiangqi';
+import { ALL_SQUARES } from '../game/boards';
+import { levelForDifficulty } from './difficulty';
 
 /**
- * Port of apps/chessapp/src/state/useGameSession.ts.
- *
- * Engine factories are injected by the caller (Phase W2):
- * `apps/desktop/src-ui/state/engines.ts` supplies Tauri-transport factories
- * and the hook behaves exactly like the RN version. When factories are
- * omitted the session falls back to local two-player mode.
+ * Binds a GameSession to React state. Engine factories are injected by the
+ * caller (`apps/desktop/src-ui/state/engines.ts` supplies Tauri-transport
+ * factories); when they are omitted the session falls back to local
+ * two-player mode.
  */
-
-const ALL_SQUARES: Record<GameType, string[]> = {
-  chess: CHESS_FILES.flatMap(f => CHESS_RANKS.map(r => `${f}${r}`)),
-  xiangqi: XQ_FILES.flatMap(f => XQ_RANKS.map(r => `${f}${r}`)),
-};
 
 export interface SessionUiState {
   pieces: Record<Square, Piece>;
@@ -58,6 +50,16 @@ export interface SessionActions {
 
 export type GameMode = 'pve' | 'pvp' | 'eve';
 
+/** What the setup screen hands to the game screen. */
+export interface StartConfig {
+  mode: GameMode;
+  humanSide: Side;
+  difficulty: 1 | 2 | 3 | 4 | 5;
+  difficultySecond?: 1 | 2 | 3 | 4 | 5;
+  stepMode?: boolean;
+  autoDelayMs?: number;
+}
+
 /** Feature availability derived from injected factories (drives UI disabling). */
 export interface SessionCapabilities {
   hints: boolean;
@@ -67,11 +69,9 @@ export interface SessionCapabilities {
   isStepMode: boolean;
 }
 
-const DIFFICULTY_LEVELS = [2, 6, 10, 14, 18] as const;
-
-export function levelForDifficulty(difficulty: 1 | 2 | 3 | 4 | 5): number {
-  return DIFFICULTY_LEVELS[difficulty - 1] ?? 10;
-}
+// Difficulty <-> engine level mapping lives in ./difficulty so the modal and
+// the engine factories share one source of truth.
+export { DIFFICULTY_LEVELS, levelForDifficulty } from './difficulty';
 
 /**
  * Binds a GameSession to React state. A new session is created whenever
@@ -79,16 +79,15 @@ export function levelForDifficulty(difficulty: 1 | 2 | 3 | 4 | 5): number {
  */
 export function useGameSession(args: {
   gameKey: number;
-  gameType: GameType;
   mode: GameMode;
   humanSide: Side;
   difficulty: 1 | 2 | 3 | 4 | 5;
   difficultySecond?: 1 | 2 | 3 | 4 | 5;
   stepMode?: boolean;
   autoDelayMs?: number;
-  /** Initial position FEN; omit for standard start position. */
+  /** Initial position FEN; omit for the standard start position. */
   initialFen?: string;
-  /** W2: Tauri transport factories; omit for local two-player mode. */
+  /** Tauri transport factories; omit for local two-player mode. */
   factories?: {
     engineRunnerFactory: EngineRunnerFactory;
     analysisFactory?: AssistEngineFactory;
@@ -99,7 +98,7 @@ export function useGameSession(args: {
   capabilities: SessionCapabilities;
   sessionRef: React.RefObject<GameSession | null>;
 } {
-  const { gameKey, gameType, mode, humanSide, difficulty, difficultySecond, stepMode, autoDelayMs, initialFen, factories } = args;
+  const { gameKey, mode, humanSide, difficulty, difficultySecond, stepMode, autoDelayMs, initialFen, factories } = args;
 
   const [state, setState] = useState<SessionUiState>({
     pieces: {},
@@ -120,7 +119,7 @@ export function useGameSession(args: {
     let unsub: (() => void) | null = null;
     setState(s => ({ ...s, bootError: null }));
 
-    const profileId = gameType === 'chess' ? 'stockfish' : 'pikafish';
+    const profileId = 'pikafish';
     const autoPlay = !(mode === 'eve' && stepMode);
 
     const playerFor = (side: Side) => {
@@ -140,7 +139,7 @@ export function useGameSession(args: {
       } as const;
     };
 
-    const rules = gameType === 'chess' ? new ChessRules(initialFen) : new XiangqiRules(initialFen);
+    const rules = new XiangqiRules(initialFen);
     const session = new GameSession({
       rules,
       white: playerFor('w'),
@@ -153,7 +152,7 @@ export function useGameSession(args: {
 
     const snapshot = () => {
       const pieces: Record<Square, Piece> = {};
-      for (const sq of ALL_SQUARES[gameType]) {
+      for (const sq of ALL_SQUARES) {
         const p = session.rules.pieceAt(sq);
         if (p) pieces[sq] = p;
       }
@@ -207,7 +206,7 @@ export function useGameSession(args: {
       }));
     });
 
-    // Browser lifecycle ↔ session suspend/resume (RN used AppState; doc §4.4).
+    // Browser lifecycle ↔ session suspend/resume
     const onVisibility = () => {
       if (document.hidden) session.suspend();
       else session.resume();

@@ -1,16 +1,10 @@
 import type {
   EngineInfo,
-  GoLimits,
-  UciOptionValue,
+  EngineTurnStrategy,
   UciEngineDriver,
-} from '@chesslab/engine-uci';
-import {
-  choosePikafishMove,
-  computeStrengthOptions,
-  pickThinkTimeMs,
-  pikafishSpecForLevel,
-} from '@chesslab/engine-uci';
-import type { MoveUci } from '@chesslab/rules-core';
+} from '@chessnext/engine-uci';
+import { choosePikafishMove } from '@chessnext/engine-uci';
+import type { MoveUci } from '@chessnext/rules-core';
 
 /**
  * Engine turn execution, decoupled from transports so sessions can be tested
@@ -25,9 +19,9 @@ export interface EngineTurnRunner {
     clock?: { remainingMs?: number; incrementMs?: number };
     onInfo?: (info: EngineInfo) => void;
     /**
-     * Optional veto for randomized MultiPV alternatives (Pikafish host-side
-     * weakening only). The engine's own bestmove is never vetoed. Used to
-     * keep the variety randomizer out of repetition loops.
+     * Optional veto for randomized MultiPV alternatives (host-weakened mode
+     * only). The engine's own bestmove is never vetoed. Used to keep the
+     * variety randomizer out of repetition loops.
      */
     guardCandidate?: (mv: MoveUci) => boolean;
   }): Promise<{ bestmove: MoveUci | null }>;
@@ -42,13 +36,19 @@ export type EngineRunnerFactory = (args: {
 }) => Promise<EngineTurnRunner> | EngineTurnRunner;
 
 /**
- * Default runner over a live UCI driver (Stockfish / Pikafish).
- * Generation counters make cancel() safe even while a bridge round-trip is
- * in flight: stale resolutions are dropped by the caller checking gen.
+ * Default runner over a live UCI driver (Pikafish).
+ *
+ * The difficulty policy is injected as an `EngineTurnStrategy` so the same
+ * runner serves every mode:
+ *   - `hostWeakenedStrategy()`  — search-budget + near-equal randomisation
+ *   - `engineOptionsStrategy(o)` — the engine's own strength options, verbatim
+ *
+ * Generation counters make cancel() safe even while a bridge round-trip is in
+ * flight: stale resolutions are dropped by the caller checking gen.
  */
 export function createUciRunner(
   driver: UciEngineDriver,
-  options?: Record<string, UciOptionValue>,
+  strategy: EngineTurnStrategy,
 ): EngineTurnRunner {
   let currentGen = 0;
 
@@ -59,36 +59,22 @@ export function createUciRunner(
 
     async requestMove({ fen, moves, level, clock, onInfo, guardCandidate }) {
       const gen = currentGen + 1;
+      const plan = strategy.plan({ level, clock });
 
-      const isPikafish = driver.id === 'pikafish';
-      const spec = isPikafish ? pikafishSpecForLevel(level, clock) : null;
-
-      // Apply host-side weakening knobs before the search.
-      if (isPikafish && spec) {
-        if (spec.multiPv > 1) await driver.setOptions({ MultiPV: spec.multiPv });
-        else await driver.setOptions({ MultiPV: 1 });
-      } else {
-        const strength = computeStrengthOptions(
-          driver.profile,
-          driver.availableOptions as ReadonlyMap<string, unknown>,
-          level,
-        );
-        if (Object.keys(strength).length > 0) await driver.setOptions(strength);
-      }
+      // Apply the strategy's options (MultiPV breadth included) and confirm.
+      if (Object.keys(plan.options).length > 0) await driver.setOptions(plan.options);
 
       if (gen <= currentGen) return { bestmove: null };
       currentGen = gen;
 
-      const limits: GoLimits = isPikafish && spec ? spec.limits : { movetimeMs: pickThinkTimeMs(level, clock) };
-
-      // For Pikafish we collect MultiPV infos and stochastically pick a blunder
-      // candidate (host-emulated Skill Level). Stockfish keeps its own
-      // UCI_Elo / Skill Level handling.
-      const infos = isPikafish && spec && spec.multiPv > 1 ? new Map<number, EngineInfo>() : null;
+      const spec = plan.spec;
+      // Only collect MultiPV infos when the strategy actually wants to choose
+      // among near-equal alternatives; otherwise the engine's bestmove stands.
+      const infos = spec.multiPv > 1 ? new Map<number, EngineInfo>() : null;
 
       return await new Promise<{ bestmove: MoveUci | null }>((resolve, reject) => {
         driver
-          .search({ fen, moves }, limits, info => {
+          .search({ fen, moves }, spec.limits, info => {
             if (gen !== currentGen) return;
             if (infos && info.multipv !== undefined) {
               const prev = infos.get(info.multipv);
@@ -99,7 +85,7 @@ export function createUciRunner(
           .then(
             r => {
               if (gen !== currentGen) return;
-              if (infos && spec && r.bestmove) {
+              if (infos && r.bestmove) {
                 const chosen = choosePikafishMove(infos, r.bestmove, spec, Math.random, guardCandidate);
                 resolve({ bestmove: chosen });
               } else {

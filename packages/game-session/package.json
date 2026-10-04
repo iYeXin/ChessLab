@@ -1,16 +1,15 @@
 {
-  "name": "@chesslab/game-session",
-  "version": "0.3.3",
+  "name": "@chessnext/game-session",
+  "version": "0.4.0-alpha",
   "private": true,
   "main": "src/index.ts",
   "types": "src/index.ts",
   "dependencies": {
-    "@chesslab/engine-uci": "workspace:*",
-    "@chesslab/rules-core": "workspace:*"
+    "@chessnext/engine-uci": "workspace:*",
+    "@chessnext/rules-core": "workspace:*"
   },
   "devDependencies": {
-    "@chesslab/rules-chess": "workspace:*",
-    "@chesslab/rules-xiangqi": "workspace:*"
+    "@chessnext/rules-xiangqi": "workspace:*"
   },
   "license": "MIT"
 }

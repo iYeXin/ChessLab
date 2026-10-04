@@ -1,12 +1,12 @@
 [package]
-name = "chesslab"
-version = "0.3.3"
-description = "ChessLab — chess & xiangqi (Stockfish / Pikafish)"
+name = "chessnext"
+version = "0.4.0-alpha"
+description = "Experimental xiangqi-only research build (Pikafish)"
 license = "MIT"
 edition = "2021"
 
 [lib]
-name = "chesslab_lib"
+name = "chessnext_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

@@ -10,7 +10,7 @@
  *   - apps/desktop/package.json
  *   - apps/desktop/src-tauri/tauri.conf.json
  *   - apps/desktop/src-tauri/Cargo.toml
- *   - packages/{engine-process,engine-uci,game-session,persistence,puzzles,rules-chess,rules-core,rules-xiangqi}/package.json
+ *   - packages/{engine-uci,game-session,persistence,puzzles,rules-core,rules-xiangqi}/package.json
  *
  * 约定:
  *   - 版本格式 semver: x.y.z
@@ -40,12 +40,10 @@ const files = [
   'apps/desktop/package.json',
   'apps/desktop/src-tauri/tauri.conf.json',
   'apps/desktop/src-tauri/Cargo.toml',
-  'packages/engine-process/package.json',
   'packages/engine-uci/package.json',
   'packages/game-session/package.json',
   'packages/persistence/package.json',
   'packages/puzzles/package.json',
-  'packages/rules-chess/package.json',
   'packages/rules-core/package.json',
   'packages/rules-xiangqi/package.json',
 ];
@@ -61,12 +59,11 @@ function bumpCargoToml(p, version) {
   let s = readFileSync(p, 'utf8');
   // Only replace [package] version = "..."
   // Cargo.toml may have multiple version fields (dependencies), so scope to [package] block
-  const before = s;
-  s = s.replace(
-    /(\[package\][^\[]*?version\s*=\s*")[^"]+(")/s,
-    `$1${version}$2`
-  );
-  if (s === before) throw new Error(`Cargo.toml version not found in ${p}`);
+  // NOTE: test the match rather than "did the text change" — bumping to the
+  // version that is already there is a legitimate no-op, not an error.
+  const re = /(\[package\][^\[]*?version\s*=\s*")[^"]+(")/s;
+  if (!re.test(s)) throw new Error(`Cargo.toml version not found in ${p}`);
+  s = s.replace(re, `$1${version}$2`);
   writeFileSync(p, s, 'utf8');
 }
 

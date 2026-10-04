@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { EngineTransport } from '@chesslab/engine-uci';
+import type { EngineTransport } from '@chessnext/engine-uci';
 
 /**
  * Tauri transport for UCI engines (Phase W2).

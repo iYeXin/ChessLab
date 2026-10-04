@@ -1,10 +1,9 @@
 import React, { useMemo } from 'react';
-import type { Piece, Square } from '@chesslab/rules-core';
+import type { Piece, Square } from '@chessnext/rules-core';
 import { XIANGQI_CHARS, type GameTheme } from '../theme/games';
 import { boardPoints, keyOf, XQ_FILES, type BoardPoint } from '../game/boards';
 
 /**
- * DOM port of apps/chessapp/src/components/xiangqi/XiangqiBoardView.tsx.
  * 9x10 intersection board drawn with ink lines on a tan face:
  * outer double border, river with 楚河/漢界, palace diagonals,
  * round disc pieces sitting ON intersections.
@@ -30,7 +29,7 @@ const LINE_W = 1;
 
 export function XiangqiBoardView(props: Props) {
   const { size, orientation, pieces, theme, onPressPoint, flipOpponentPieces, xiangqiFont, xiangqiTexture } = props;
-  const points = useMemo(() => boardPoints('xiangqi', orientation), [orientation]);
+  const points = useMemo(() => boardPoints(orientation), [orientation]);
 
   const pad = Math.max(14, Math.floor(size * 0.06));
   const cellX = (size - pad * 2) / 8; // 9 files -> 8 gaps

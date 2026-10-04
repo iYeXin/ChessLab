@@ -1,20 +1,6 @@
 import React from 'react';
-import type { GameType } from '@chesslab/rules-core';
-import { CHESS_THEME, XIANGQI_THEME } from '../theme/games';
 
-/** DOM port of apps/chessapp/src/screens/HomeScreen.tsx. — 5: card click enters setup */
-
-export type GameMode = 'pve' | 'pvp' | 'eve';
-
-export interface StartConfig {
-  gameType: GameType;
-  mode: GameMode;
-  humanSide: import('@chesslab/rules-core').Side;
-  difficulty: 1 | 2 | 3 | 4 | 5;
-  difficultySecond?: 1 | 2 | 3 | 4 | 5;
-  stepMode?: boolean;
-  autoDelayMs?: number;
-}
+/** 首页 — 单一棋种（中国象棋），实验性版本。 */
 
 const C = {
   rootBg: '#F1EADC',
@@ -24,7 +10,7 @@ const C = {
 };
 
 export function HomeScreen(props: {
-  onPickGameType(gt: GameType): void;
+  onPlay(): void;
   onPuzzles(): void;
   onSettings(): void;
   onDiagnostics(): void;
@@ -67,28 +53,62 @@ export function HomeScreen(props: {
           棋弈
         </h1>
         <div style={{ fontSize: 9, letterSpacing: 4, color: C.brandSub, textAlign: 'center' }}>
-          CHESS · XIANGQI — 单机对弈
+          CHESSNEXT · 中国象棋 · 单机对弈
         </div>
 
-        <div style={{ display: 'flex', gap: '12px', marginTop: 'var(--sp-xl)', justifyContent: 'center', flexWrap: 'wrap' }}>
-          <GameCard
-            theme={CHESS_THEME}
-            title="国际象棋"
-            tag="STOCKFISH 18"
-            onPress={() => props.onPickGameType('chess')}
-            art={<MiniChessArt />}
-          />
-          <GameCard
-            theme={XIANGQI_THEME}
-            title="中国象棋"
-            tag="PIKAFISH"
-            onPress={() => props.onPickGameType('xiangqi')}
-            art={<MiniXiangqiArt />}
-          />
+        {/* 小字：实验性版本说明 */}
+        <div
+          style={{
+            marginTop: 10,
+            fontSize: 10,
+            letterSpacing: 1.5,
+            color: C.muted,
+            backgroundColor: '#FBF7EE',
+            border: '1px solid #E4DCCD',
+            borderRadius: 999,
+            padding: '3px 12px',
+          }}
+        >
+          实验性版本 · 仅供研究
         </div>
 
-        <div style={{ marginTop: 'var(--sp-xl)', fontSize: 11, color: '#8A8070', textAlign: 'center', lineHeight: 1.6 }}>
-          点击棋种卡片进入配置
+        <button
+          type="button"
+          onClick={props.onPlay}
+          style={{
+            marginTop: 'var(--sp-xl)',
+            width: '100%',
+            maxWidth: 312,
+            boxSizing: 'border-box',
+            borderRadius: 14,
+            borderWidth: 2,
+            borderStyle: 'solid',
+            borderColor: 'transparent',
+            backgroundColor: '#FAF5E9',
+            padding: 'var(--sp-m)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 'var(--sp-xs)',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.borderColor = '#A63A2B';
+            e.currentTarget.style.transform = 'translateY(-2px)';
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.borderColor = 'transparent';
+            e.currentTarget.style.transform = 'none';
+          }}
+        >
+          <div style={{ borderRadius: 8, padding: 'var(--sp-s)', marginBottom: 'var(--sp-xs)', backgroundColor: '#F3EBDB' }}>
+            <MiniXiangqiArt />
+          </div>
+          <span style={{ color: '#26211A', fontWeight: 800, fontSize: 15 }}>中国象棋</span>
+          <span style={{ color: '#8A8070', fontSize: 9, letterSpacing: 2 }}>PIKAFISH</span>
+        </button>
+
+        <div style={{ marginTop: 'var(--sp-m)', fontSize: 11, color: '#8A8070', textAlign: 'center', lineHeight: 1.6 }}>
+          点击卡片进入配置
           <br />
           可选人机 / 双人 / 观战（双机步进）
         </div>
@@ -133,82 +153,6 @@ export function HomeScreen(props: {
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function GameCard(props: {
-  theme: typeof CHESS_THEME;
-  title: string;
-  tag: string;
-  art: React.ReactNode;
-  onPress(): void;
-}) {
-  const t = props.theme;
-  // Card colors come from the picked game's palette (static hex in RN too).
-  const isChess = t.gameType === 'chess';
-  const surface = isChess ? '#F7F3EA' : '#FAF5E9';
-  const accent = isChess ? '#7A5230' : '#A63A2B';
-  const bg = isChess ? '#EFE9DE' : '#F3EBDB';
-  const textPrimary = isChess ? '#2A251D' : '#26211A';
-  const textSecondary = isChess ? '#8B8271' : '#8A8070';
-
-  return (
-    <button
-      type="button"
-      onClick={props.onPress}
-      style={{
-        width: 150,
-        flex: '0 0 150px',
-        boxSizing: 'border-box',
-        borderRadius: 14,
-        borderWidth: 2,
-        borderStyle: 'solid',
-        borderColor: 'transparent',
-        backgroundColor: surface,
-        padding: 'var(--sp-m)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 'var(--sp-xs)',
-      }}
-      onMouseEnter={e => ((e.currentTarget.style.borderColor = accent), (e.currentTarget.style.transform = 'translateY(-2px)'))}
-      onMouseLeave={e => ((e.currentTarget.style.borderColor = 'transparent'), (e.currentTarget.style.transform = 'none'))}
-    >
-      <div
-        style={{
-          borderRadius: 8,
-          padding: 'var(--sp-s)',
-          marginBottom: 'var(--sp-xs)',
-          backgroundColor: bg,
-        }}
-      >
-        {props.art}
-      </div>
-      <span style={{ color: textPrimary, fontWeight: 800, fontSize: 15 }}>{props.title}</span>
-      <span style={{ color: textSecondary, fontSize: 9, letterSpacing: 2 }}>{props.tag}</span>
-    </button>
-  );
-}
-
-/** Tiny board previews used on the home cards. */
-function MiniChessArt() {
-  const light = '#EDD6B0';
-  const dark = '#AE8658';
-  const cells = Array.from({ length: 16 }, (_, i) => (Math.floor(i / 4) + i) % 2 === 0);
-  return (
-    <div
-      style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        width: 76,
-        borderRadius: 3,
-        overflow: 'hidden',
-      }}
-    >
-      {cells.map((isLight, i) => (
-        <div key={i} style={{ width: 19, height: 19, backgroundColor: isLight ? light : dark }} />
-      ))}
     </div>
   );
 }
@@ -262,7 +206,7 @@ function MiniDisc({ color, char }: { color: string; char: string }) {
 }
 
 function MiniPuzzleArt() {
-  // 极简棋盘 + 目标点：与 MiniChessArt 同尺度，保持安静
+  // 极简棋盘 + 目标点，保持安静
   const light = '#EDE0C8';
   const dark = '#C8A88A';
   const accent = '#7A5230';

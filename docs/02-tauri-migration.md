@@ -1,298 +1,264 @@
-# Tauri + React 迁移开发文档
+# 架构与关键决策记录
 
-> 状态：**权威规划**（2026-08 定稿） · 本文档是当前的开发基准。
-> RN 阶段的选型记录见 [01-tech-selection.md](01-tech-selection.md)（已标注历史存档）。
-
----
-
-## 0. TL;DR
-
-- **决策**：客户端框架由 React Native 切换为 **Tauri 2 + React (DOM)**。目标平台不变：**Windows + Android**。
-- **核心论据**：RN 的成本集中在"原生桥接抽象层"（TurboModule/codegen/feature-flag 双系统/VS 版本锁定），实测已构成硬阻塞；而本项目的原生需求极薄（仅"spawn 引擎进程 + 流式读 stdout"），Tauri 把这个问题还原成普通的进程管理，无框架抽象税。
-- **保留资产**：`packages/*` 六个纯 TS 包（规则内核、UCI 驱动、会话编排、持久化接口，63 个测试全绿）**100% 复用，零改动**。UI 设计（双风格主题、布局、交互）平移。
-- **顺序**：Windows 先行（最快见效）→ Android 跟上 → 打磨迭代。
+> 状态：**当前权威** · 面向 `0.4.0-alpha`（实验性中国象棋研究版）。
+> 本文档取代了此前的 `01-tech-selection.md`（RN 阶段选型）与 `02-tauri-migration.md`（迁移规划）——迁移已完成，规划性内容不再保留。
 
 ---
 
-## 1. 决策背景：为什么从 RN 切换
+## 0. 一句话
 
-### 1.1 RN 阶段成果（全部保留）
-
-| 成果 | 状态 |
-|---|---|
-| `packages/rules-core` 统一规则抽象（`RulesAdapter`/`Side`/UCI 坐标着法/`pieceAt`） | ✅ 完成并测试 |
-| `packages/rules-chess`（chess.js 封装） | ✅ |
-| `packages/rules-xiangqi`（vendor xiangqi.js + 类型 + 已知分歧记录） | ✅ |
-| `packages/engine-uci` UCI 协议解析/驱动/强度映射 | ✅ |
-| `packages/engine-process` 传输抽象（`EngineTransport`/`EngineSpawnSpec`） | ✅ 接口保留，适配器重写 |
-| `packages/game-session` 会话状态机/时钟/辅助分析（MultiPV 占空比、suspend/resume 功耗策略） | ✅ |
-| `packages/persistence` 存储接口 + memory/node-file 实现 | ✅ |
-| 引擎集成方案实证：Stockfish 18 / Pikafish 2026-01-02 真实握手+搜索；perft 对拍；Android W^X 分发方案（jniLibs `lib*.so` + `nativeLibraryDir` exec） | ✅ |
-| UI 设计验证：双风格（国象木质感 / 象棋纸墨感）在真机截图确认可行，视觉达标 | ✅ 设计保留，渲染层平移 |
-| 截图迭代工作流（模拟器/窗口截屏 + 读图分析） | ✅ 工作流保留 |
-
-### 1.2 阻塞问题证据链（切换决策依据）
-
-RN 路线在"引擎桥"这最后一步连续遭遇框架抽象层问题，均有实证：
-
-1. **Legacy module 注册不可用（bridgeless/Fabric）**
-   - 现象：`TurboModuleRegistry.getEnforcing('ChessEngines') → could not be found`，无 cause 日志。
-   - 排查过程：手动注册 → `BaseReactPackage` + FQCN → codegen TurboModule（spec 基类）→ 逐层排除后，Java 侧 `getModule('ChessEngines') → creating` 成功，但 JS 侧仍拿不到。
-2. **根因（读 RN 源码实锤）**：feature flag 双系统不一致。
-   - Java 侧：`ReactNativeNewArchitectureFeatureFlags.useTurboModuleInterop()` = true（bridgeless 默认）→ Java delegate 正常创建模块；
-   - C++ 侧：`ReactNativeFeatureFlagsDefaults.h` 中 `useTurboModuleInterop() { return false; }` → C++ TurboModuleManager 拒绝把 Java LegacyTurboModule 转成 JSI，返回空。
-   - 可修（index.js 顶部 JS override 两行），但：**修一个 flag 不能改变"每层抽象都可能藏同类黑盒"的结构性风险**。
-3. **Windows Debug 构建启动即崩**（`0xc0000409`，最小 JS 复现 → 纯原生层）：RNW 0.84 要求 VS ≥18.6，本机 18.5.2；静默更新要求提权 shell（`5007` 日志实锤）。即便升级通过，RNW 的版本锁定将长期存在。
-4. **结构性判断**：上述问题都不是业务 bug，而是"框架桥接抽象"的固有税。RN 每次大版本升级都可能重踩。而本项目的原生需求只有一个：**spawn 一个进程并读它的 stdout**。
-
-### 1.3 对比结论
-
-| 维度 | RN（实测） | Tauri 2（评估） |
-|---|---|---|
-| 引擎进程桥 | TurboModule/codegen/feature-flag 三层抽象，黑盒难查 | Rust `std::process::Command` + stdout 流；Android 为 Tauri 插件（Kotlin ProcessBuilder，现有逻辑平移） |
-| Windows 工具链 | VS ≥18.6 锁定 + RNW 版本节奏 | Rust stable + MSVC Build Tools 基础版，无版本锁定 |
-| UI 渲染 | Fabric 原生渲染 | 系统 WebView（Win: WebView2 / Android: System WebView）；棋盘 UI 为基础 CSS，风险低 |
-| 业务逻辑 | 纯 TS 包 | **同一批包直接复用**（浏览器环境，纯计算无障碍） |
-| 包体 | Debug APK 165MB（引擎 114MB 为大头，RN runtime 次之） | 预计更小（无 RN runtime/Hermes） |
-| 已知风险 | 框架抽象黑盒（已实锤） | 生态年轻（文档少）；Android WebView 碎片化（低影响）；Tauri Android 打包链较新 |
-
-> 备注：用户此前对 Tauri 的顾虑（"移动端抽象不行"）经重新校准为：Tauri 移动端短板在**复杂原生 UI 集成**，本项目移动端只需要 WebView 壳 + 一个进程插件，恰好避开。
+**Tauri 2 + React DOM 外壳，纯 TS 的规则 / 引擎 / 会话包，Rust 只做一件事：spawn 引擎进程并把 stdout 流式转发回前端。**
 
 ---
 
-## 2. 目标架构
+## 1. 项目定位
 
-### 2.1 总体结构
+实验性 / 研究性分支。相对上游 ChessNext 的两项激进裁剪：
 
-```
-apps/desktop/
-├── src-ui/                  # 前端（Vite + React DOM + TS）
-│   ├── theme/               # CSS variables 版双风格（平移自 RN theme）
-│   ├── components/          # 棋盘（DOM 绝对定位）/ 顶栏 / 控制排 / 着法带 / 辅助面板 / 结果浮层
-│   ├── screens/             # Home / Game / Diagnostics
-│   ├── state/               # useGameSession（平移）+ engines.ts（Tauri 适配）
-│   └── transport/tauri.ts   # EngineTransport 的 Tauri 实现（invoke + listen）
-├── src-tauri/
-│   ├── src/
-│   │   ├── main.rs / lib.rs
-│   │   ├── engines.rs       # 引擎进程管理：spawn/写行/停止/stdout→事件
-│   │   └── paths.rs         # 引擎二进制定位（资源目录）
-│   ├── capabilities/        # Tauri 2 权限清单
-│   ├── icons/
-│   └── tauri.conf.json      # 窗口/打包/resources（engines 目录）
-├── index.html
-├── vite.config.ts
-└── package.json
+1. **单一棋种**：只保留中国象棋。国际象棋相关内容（含 Stockfish、chess.js、国象棋盘与题库）已全部移除。
+2. **缺陷清理**：见 [`CHANGELOG.md`](../CHANGELOG.md) `[0.4.0-alpha]`。
 
-packages/                    # 不动，直接以 workspace 源码引用
-├── rules-core / rules-chess / rules-xiangqi
-├── engine-uci / engine-process(接口保留) / game-session / persistence
+版本 `0.4.0-alpha` 表示接口与行为仍可能变动。
 
-plugins/android-engine/      # Phase A：Tauri Android 插件（Kotlin）
-├── android/.../EnginePlugin.kt   # ProcessBuilder + nativeLibraryDir（W^X 方案不变）
-└── ...
-```
+---
 
-### 2.2 技术栈与版本
+## 2. 技术栈与版本
 
 | 项 | 选择 | 说明 |
 |---|---|---|
-| Tauri | 2.x stable | 以官方文档为准；Windows 用 WebView2（Win10/11 自带） |
-| Rust | stable（MSVC target） | 只需基础 MSVC Build Tools，**无 VS 版本锁定** |
-| 前端 | Vite + React + TypeScript | 标准 Web 工程，摆脱 Metro/自定义 resolver |
-| 包管理 | pnpm（沿用） | workspace 增加 `apps/desktop` |
-| Android | Tauri Android + Kotlin 插件 | 需 Android NDK（Rust 交叉编译用）——**前置检查项** |
-| 状态/样式 | React hooks + CSS variables + 普通 CSS | 不引入重状态库；棋盘用绝对定位 DOM |
-
-### 2.3 复用矩阵（RN → Tauri）
-
-| RN 产物 | 去向 |
-|---|---|
-| `packages/*`（6 包） | **原样复用**（纯 TS/浏览器兼容；`persistence` 的 node-file 实现仅测试用，桌面走 Tauri fs/sqlite 适配器） |
-| `theme/games.ts` 调色板与规格 | → CSS variables（`--board-light` 等），结构不变 |
-| `ChessBoardView` / `XiangqiBoardView` | → DOM 版：格子/线条/棋子全部 `div` 绝对定位；交互（点选/合法点/提示/上一步高亮）逻辑平移 |
-| `GameChrome`（TopBar/Status/Controls/MoveList/Assist/ResultOverlay） | → DOM 组件，逻辑平移 |
-| `useGameSession` hook | → 平移（把 `require('react-native')` 等平台点替换为 Tauri 适配层） |
-| `state/engines.ts`（路径解析/profile/工厂） | → 平移，`spawnSpecFor` 改由 Rust 端定位（见 §3） |
-| Kotlin `ChessEnginesModule`（ProcessBuilder/stdout 线程/事件） | → 平移进 Tauri Android 插件 |
-| RN 的 android//windows 原生工程、Metro 配置 | **废弃**（保留在 git 历史） |
+| 桌面壳 | Tauri 2.x stable | Windows 用 WebView2 |
+| 前端 | Vite 5 + React 18 + TypeScript | 标准 Web 工程，无 Metro / 自定义 resolver |
+| 移动端 | Tauri 2 Android（Rust 交叉编译 + Gradle） | 需 Android NDK；`gen/android` 工程 |
+| 包管理 | pnpm workspace | `apps/*` + `packages/*` |
+| 状态 / 样式 | React hooks + CSS variables | 不引入重状态库 |
+| 引擎 | Pikafish 2023-03-05（GPL-3.0，独立进程） | 版本与下载地址固定在 `scripts/fetch-engines.ps1`；此版本仍提供 `UCI_Elo` / `Skill Level` |
+| 规则内核 | vendored xiangqi.js（BSD-2）+ 自维护长将裁决 | 不依赖引擎做合法性校验（引擎缺失也能玩） |
+| 模型推理 | onnxruntime-web 1.30（WebGPU → WASM） | 仅模式 3；纯 TS 编码层在 `packages/engine-onnx`，可在 Node 下单测 |
+| 测试 | Vitest（12 套件 / 116 用例） | 纯逻辑包在 Node 下可测 |
 
 ---
 
-## 3. 引擎桥设计（核心）
+## 3. 分层
 
-### 3.1 统一接口（不变）
+```
+UI  apps/desktop/src-ui
+    screens / components（棋盘、chrome、DifficultyPicker/Modal）/ state / theme / transport
+      │  SessionEvent 流 + React state
+GameSession  packages/game-session
+    状态机 · 时钟 · 辅助分析 · suspend/resume · 完整历史透传 · 防重复护栏
+      │  EngineRunnerFactory（按棋力方案注入不同实现）
+      ├─ 模式 1/2 → engine-uci
+      │     UCI 解析 · FifoDriver · EngineTurnStrategy（宿主弱化 / 引擎原生选项）
+      │       │  EngineTransport  ←—— 关键抽象缝
+      │     transport/tauri.ts   invoke + listen(engine://line/<id>)
+      │     engines.rs           Rust：spawn / write / stop / stdout 流式事件
+      └─ 模式 3   → engine-onnx
+            编码 / 视角归一化 / 掩码 softmax / 温度 / 杀棋守卫
+              │  OnnxSession（注入）
+            state/onnx.ts      onnxruntime-web（WebGPU → WASM）
+rules-core → rules-xiangqi
+puzzles（112 局）· persistence（接口保留，未接入）
+```
 
-`packages/engine-uci` 的 `EngineTransport`（write/kill/exited/onLine/onIOError）与 `UciEngineDriver` **原样复用**。新增 `apps/desktop/src-ui/transport/tauri.ts`：
+### 分层原则
+
+- **纯逻辑包零 React 依赖**：`rules-*` / `engine-uci` / `game-session` / `puzzles` / `persistence` 全部可在 Node 下直接测试。
+- **传输即插件**：新平台只需实现一个 `EngineTransport`（`write` / `kill` / `exited` / `onLine` / `onIOError`）。
+- **残局即数据**：`Puzzle` 结构与引擎、规则层解耦。
+- **单成员接缝**：`GameType` 收窄为 `'xiangqi'`，但 `RulesAdapter` 抽象与各层泛型保留——将来加回第二种棋只需新增一个适配器 + 一套主题令牌，不动引擎与会话层。
+
+---
+
+## 4. 引擎桥（核心）
+
+### 4.1 统一接口
+
+`EngineTransport`（见 `packages/engine-uci/src/types.ts`）是唯一的平台缝：
 
 ```ts
-export function createTauriTransport(id: number, profile: string): EngineTransport {
-  // spawn: invoke('spawn_engine', { profile }) -> engineId
-  // write: invoke('engine_write', { id, line })
-  // kill : invoke('engine_stop', { id })
-  // onLine: listen(`engine://line/${id}`, ev => cb(ev.payload.line))
-  // exited: listen(`engine://exit/${id}`) -> resolve(code)
+interface EngineTransport {
+  write(line: string): void;
+  kill(): void;
+  readonly exited: Promise<number | null>;
+  onLine(handler: (line: string) => void): void;
+  onIOError(handler: (err: Error) => void): void;
 }
 ```
 
-### 3.2 Windows：Rust 实现（`src-tauri/src/engines.rs`）
+实现有两处，彼此不共享代码：
 
-- `spawn_engine(profile)`：
-  - 定位二进制：`resource_dir()/engines/<stockfish|pikafish>.exe`（`tauri.conf.json > bundle > resources` 打包 `engines/`）；
-  - `std::process::Command::new(...)` + `stdin/stdout/stderr` piped；
-  - `tauri::async_runtime::spawn` 读 stdout：按行 `BufReader::lines()` → `app.emit("engine://line/<id>", ...)`；
-  - stderr：排空（防管道阻塞）；
-  - `wait()` → `app.emit("engine://exit/<id>", code)`。
-- `engine_write(id, line)`：写 stdin + `\n` + flush；
-- `engine_stop(id)`：kill 子进程；
-- 多实例：`HashMap<u32, EngineChild>` + `Mutex`；id 自增。
-- 事件频率评估：UCI info 行在 movetime ≤3s 下为每秒几十~几百行，Tauri event（JSON over IPC）可承载；辅助模式如遇高频可后续在 Rust 侧做 100ms 合帧（预留）。
+| 实现 | 位置 | 用途 |
+|---|---|---|
+| Tauri 桥 | `apps/desktop/src-ui/transport/tauri.ts` | 应用运行时（`invoke` + `listen`） |
+| Node child_process | `scripts/node-transport.ts` | 冒烟测试、perft 对拍等开发工具 |
 
-### 3.3 Android：Tauri 插件（Kotlin）
+> Node 版**刻意放在 `packages/` 之外**，这样任何打包器都不会把 `node:child_process` 拖进 WebView 构建。
 
-- 插件 `EnginePlugin`：
-  - `spawn(profile)`: `ProcessBuilder(nativeLibraryDir + "/lib<name>.so")`（W^X 方案与 RN 阶段完全一致：`jniLibs/arm64-v8a/lib*.so` + `useLegacyPackaging=true`）；
-  - stdout 读线程 → `Channel`/`emit` 回 JS；
-  - `writeLine/stop` 同构。
-- NNUE：`libpikafish_nnue.so` 同法打包，`EvalFile` 指向 `nativeLibraryDir/libpikafish_nnue.so`。
-- 备选（Phase A 之后的优化）：Rust 直接 `Command` spawn `nativeLibraryDir` 二进制（省一层插件），需处理 JNI 取路径——暂不采用。
+### 4.2 Windows / 桌面（`src-tauri/src/engines.rs`）
 
-### 3.4 引擎分发
+- `spawn_engine(profile)`：定位二进制（`resource_dir()/engines/*.exe`，再退到 dev 期的 `apps/desktop/engines` 与 `third_party/engines/windows-x64/...`）→ `std::process::Command` + `stdin/stdout/stderr` piped → 独立线程按行 `BufReader::lines()` → `app.emit("engine://line/<id>")`。
+- **stderr 单独线程排空**，防止管道写满阻塞子进程。
+- `engine_write(id, line)`：写 stdin + `\n` + flush。
+- `engine_stop(id)`：从注册表移除并 kill。
+- 退出检测：200ms 轮询 `try_wait()` → `engine://exit/<id>`。
+- Windows 下 `creation_flags(0x08000000)` 避免弹出控制台窗口。
+- 多实例：`HashMap<u32, EngineChild>` + `Mutex`，id 自增。
+
+### 4.3 Android（W^X 方案）
+
+Android 10+ 禁止从可写应用目录 `exec()`，但允许从 `nativeLibraryDir` 执行。做法：
+
+1. 引擎二进制改名为 `libpikafish.so` 放进 `jniLibs/arm64-v8a/`；
+2. `build.gradle.kts` 开启 `packaging { jniLibs { useLegacyPackaging = true } }`，安装时解压到磁盘；
+3. 运行时执行 `<nativeLibraryDir>/libpikafish.so`；
+4. NNUE 同样伪装为 `libpikafish_nnue.so`（`nativeLibraryDir` 可读），由 `EvalFile` 指向。
+
+`nativeLibraryDir` 的定位顺序（`engines.rs::get_android_native_library_dir`）：`dladdr` 自身 → `/proc/self/maps` → `current_exe` 父目录 → JNI `ApplicationInfo.nativeLibraryDir`（`panic` 安全包裹）。
+
+### 4.4 引擎分发
 
 | 平台 | 方式 |
 |---|---|
-| Windows | `engines/` 作为 Tauri resources 打包（stockfish.exe / pikafish.exe / pikafish.nnue）；开发期脚本从 `third_party/engines/windows-x64/` 拷贝 |
-| Android | `jniLibs/arm64-v8a/lib{stockfish,pikafish}.so` + `libpikafish_nnue.so`；脚本沿用 `scripts/sync-android-engines.ps1`（目标路径改为 Tauri 工程的 jniLibs） |
+| Windows | `engines/` 作为 Tauri resources 打包（`pikafish.exe` / `pikafish.nnue`）；`build.js` 构建前从 `third_party/engines/windows-x64/pikafish/` 拷入 |
+| Android | `jniLibs/arm64-v8a/libpikafish.so` + `libpikafish_nnue.so`；`build.js` 与 `pnpm sync:jniLibs` 均可同步 |
+
+### 4.5 进程预算
+
+每局最多三个引擎实例：**对手 1 + 辅助分析 1（常驻复用）+ 提示 1（懒加载复用）**。离开对局页 `shutdownEngines()` 全量回收。
 
 ---
 
-## 4. UI 平移指南
+## 5. 规则层
 
-### 4.1 RN → DOM 映射
+### 5.1 归一化
+
+- 全棋种统一 `Side = 'w' | 'b'`，象棋中 `w` = 红（先手）、`b` = 黑；
+- xiangqi.js 内部使用 `'r' | 'b'`，`XiangqiRules` 在 FEN 边界做 `w ↔ r` 转译；
+- 着法统一 ICCS 坐标（`h2e2`），与引擎 `position ... moves ...` 完全同构，**边界零翻译**。
+
+### 5.2 重复与长将裁决
+
+- `XiangqiRules` 增量维护 `posFens` / `posCounts`（`positionKey` = 棋盘布局 + 走子方），`undo` / `reset` 正确回退；
+- 同一局面第三次出现时，取**最后三次出现的并集窗口**，用全新局回放着法、以精确 `isCheck()` 判定是否「着着将军」；
+- 单方长将 → 将军方判负（`perpetual-check`）；双方均长将或良性重复 → 和棋。**零误判**（非启发式）。
+
+### 5.3 perft 与引擎对拍
+
+`XiangqiRules.perft()` 遍历**已验证的合法着法列表**，与 Pikafish 对拍：
+
+| 深度 | 本规则库 | Pikafish | 逐根着法 |
+|---|---|---|---|
+| 1 | 44 | 44 | 44/44 |
+| 2 | 1920 | 1920 | 44/44 |
+| 3 | 79666 | 79666 | 44/44 |
+| 4 | 3290240 | 3290240 | 44/44 |
+
+> **为什么不用 vendor 自带的 `perft()`**：它用 `generate_moves({ legal: false })` 取伪合法着法，随后判断 `if (!king_attacked(turn))`——但 `make_move` 已经把 `turn` 翻转为对手。结果是既统计了「送将」的非法着法，又丢弃了「将军」的合法着法，depth 3 少算 220 个节点（79446 ≠ 79666）。这是调试工具的缺陷，**着法生成器本身是正确的**（逐根着法可证）。复现：`pnpm probe:perft 4 --divide`。
+
+### 5.4 棋力方案与策略缝
+
+三个模式共用同一套会话与 UI，差异被收敛成一个对象：
+
+```ts
+interface EngineTurnStrategy {
+  readonly id: 'host-weakened' | 'engine-options';
+  plan(args: { level: number; clock?: {...} }): TurnPlan;   // { options, spec }
+}
+```
+
+`createUciRunner(driver, strategy)` 只按 `plan()` 下发的 `options` 与 `spec.limits` 执行，
+因此新增方案不需要改动 runner、会话或界面。
+
+| 模式 | 策略 | 做法 | 随机 |
+|---|---|---|---|
+| 1（默认） | `hostWeakenedStrategy()` | `nodes` + 浅 `depth`（跨设备确定）+ `movetime` 慢机安全帽 | 仅近分着法间 |
+| 2 | `engineOptionsStrategy(overrides)` | 直接下发引擎原生 `UCI_Elo` / `Skill Level` 等选项（`multiPv: 1`） | 无（同局面同选项恒同着） |
+| 3 | `createOnnxRunner()`（不走 UCI 进程） | WebView 内 ONNX 档位模型推理 | 按温度预设采样 |
+
+**模式 1 · 宿主弱化**
+
+- **近分随机**：仅在候选着分差落在模糊窗口内、不致命、不送杀 / 不被杀时随机；否则必走最优着。策略是「像人一样在几个等价计划中选一个」，而非「故意走错」；
+- **防重复护栏**：`occurrencesAfter(uci)` 探针否决会走进重复局面的**随机候选**；引擎自己的 bestmove 豁免（若它选择重复，交由客户端裁决器按规则判定）。
+
+**模式 2 · 引擎原生选项**
+
+Pikafish **2023-03-05 是最后一个提供原生棋力选项的版本**（`UCI_Elo` 1350–2850、
+`Skill Level` 0–20、`UCI_LimitStrength`）；更晚的版本移除了它们，所以引擎版本与模式 2 是绑定的。
+选项表 `PIKAFISH_STRENGTH_OPTIONS` 由实际 `uci` 输出转录，供模态框做范围校验与展示。
+
+**模式 3 · ONNX 档位模型**
+
+编码与推理策略全部在 `packages/engine-onnx`（纯 TS，可在 Node 下单测），
+`onnxruntime-web` 只作为注入的 `OnnxSession` 出现。三个最容易静默出错的地方
+（黑方视角归一化、着法索引 `8099 - m` 翻转、合法掩码必须用模型视角）都有专门用例覆盖。
+
+### 5.5 完整历史透传
+
+发送 `position fen <起始> moves <全程>` 而非裸 FEN，消除引擎「重复盲」：引擎能正确评估重复与长将惩罚，皮卡鱼内置亚洲规则长将评分亦能生效。
+
+---
+
+## 6. 会话层
+
+`GameSession`（`packages/game-session/src/session.ts`）负责规则执行、人类 / 引擎轮转、时钟、结果与事件流；UI 只订阅并喂入人类着法。
+
+要点：
+
+- **事件流**：`started / turn / move / thinking / engineInfo / clock / assist / result / error`。
+- **玩家抽象**：`PlayerConfig = human | engine`，在线对弈只需新增一种 `PlayerConfig`（着法来自 websocket），其下各层不动。
+- **悔棋**：撤回至人类回合（人机模式连带撤回对方应着）。
+- **辅助分析**：独立引擎进程（不与对手共用，UCI 引擎只有一个搜索控制流）；`pauseOnOpponentTurn` 默认开启，避免双引擎同时满载。
+- **移动端功耗**：`suspend()` 取消在飞搜索、暂停时钟、停止分析；`resume()` 恢复并**重新发起**被取消的引擎回合（否则对局会卡住）。
+- **时钟**：`GameClock` 注入 `setInterval` / `clearInterval` / `now`，可在 Node 下确定性测试。
+
+---
+
+## 7. UI 平移要点（RN → DOM）
 
 | RN | DOM |
 |---|---|
-| `View` + `StyleSheet` | `div` + CSS class（样式值 1:1 平移） |
-| `Text`（fontWeight/letterSpacing/textShadow） | `span/div` + `font-weight/letter-spacing/text-shadow` |
-| `Pressable` | `button/div` + `cursor:pointer` + `:active` |
-| `SafeAreaView`（safe-area-context） | `env(safe-area-inset-*)` padding |
+| `View` + `StyleSheet` | `div` + 内联样式 / CSS class |
+| `Pressable` | `button` + `:active` |
+| `SafeAreaView` | `env(safe-area-inset-*)`（顶部 inset 由 `TopBar` 自己持有，让状态栏区域与标题栏同色） |
 | `Modal` + `animationType="fade"` | 固定定位遮罩 + CSS transition |
 | `ScrollView horizontal` | `overflow-x: auto` |
-| `useWindowDimensions` | `resize` 监听 / CSS `min()` |
-| 绝对定位棋盘元素 | 相同（`position:absolute` + 像素值） |
+| `AppState` | `visibilitychange` |
 
-### 4.2 主题系统
+棋盘：
 
-`theme/games.ts` 的两个调色板 → `src-ui/theme/chess.css` / `xiangqi.css`（CSS variables 挂在游戏根容器上），组件内用 `var(--...)`。切换游戏 = 切根 class。
+- 象棋为 **9×10 交叉点**棋盘，棋子落在交点上，`y = pad + (orientation === 'w' ? 9 - rank : rank) * cellY`（ICCS rank 0 = 红方底线）；
+- 墨线（含河界断线）、双线边框、九宫斜线（`transform: rotate` + 按象限的 `transform-origin`）、楚河漢界字带；
+- 交互：点选己子 → 合法点圆点 → 点落点走子；上一步起讫染色；提示蓝标。
 
-### 4.3 棋盘要点（已验证的设计不变）
-
-- 国象：8×8 格 + 坐标框 + 字形棋子（`\u265A..` 实心字形，text-shadow 立体感）；
-- 象棋：9×10 交叉点 + 墨线（含河界断线）+ 双线边框 + 九宫斜线（CSS `transform: rotate`，`transform-origin` 按象限）+ 圆盘棋子（border 环色 + 书法字）+ 楚河漢界字带；
-- 交互：点选己子 → 合法点圆点 → 点落点走子；上一步起讫染色；提示蓝标；
-- **注意**：象棋方向已修复的结论保持——ICCS rank0 = 红方底线 = 屏幕底部（执红时），y = `(9 - rank) * cell + pad`。
-
-### 4.4 会话接线
-
-`useGameSession` 平移要点：
-- 构造 `GameSession` 时注入 `engineRunnerFactory` / `analysisFactory`（内部用 Tauri transport）；
-- 事件订阅 → `setState`（与 RN 版相同）；
-- `suspend()/resume()` 接浏览器 `visibilitychange`（替代 RN `AppState`）。
+主题：单一 `theme-xiangqi` CSS 变量集，组件零硬编码色值。
 
 ---
 
-## 5. 里程碑与验收
+## 8. 已验证 / 验收
 
-### Phase W1 — Windows 骨架 + UI 平移（先行）
-- [ ] `apps/desktop` 脚手架：Vite + React + TS + pnpm workspace 接入；`tauri init`；`tauri dev` 跑通空白窗口
-- [ ] 主题 CSS variables + Home/Game 屏幕平移（先用假数据渲染棋盘）
-- [ ] 两棋种棋盘 DOM 化 + 点选交互（纯前端，规则层接上）
-- **验收**：无引擎情况下，主页→对局页→点选走子（本地规则校验）全部可用；双风格截图达标
-
-### Phase W2 — 引擎桥 + 全链路
-- [ ] `engines.rs`：spawn/write/stop/stdout 事件/崩溃退出事件
-- [ ] `transport/tauri.ts` + `useGameSession` 接真实引擎（对手/提示/辅助三实例策略不变）
-- [ ] `fetch:engines` + 资源打包；`suspend/resume` 接 `visibilitychange`
-- **验收**：与 Stockfish/Pikafish 完成真实对局（截图）；辅助面板出分数与变着；提示箭头/高亮工作
-
-### Phase W3 — 打包与打磨
-- [ ] `tauri build`（NSIS/MSI）+ 引擎资源入包；图标/窗口元数据
-- [ ] UI 细节打磨（截图迭代：间距/字重/河界排版/棋子字形）
-- **验收**：安装包在干净 Windows 上可装可玩
-
-### Phase A1 — Android 插件
-- [ ] 前置：安装 Android NDK（Rust 交叉编译）；`tauri android init`
-- [ ] `plugins/android-engine`（Kotlin ProcessBuilder 平移）+ JS 传输适配
-- [ ] jniLibs 引擎同步脚本改造
-- **验收**：模拟器（Medium_Phone_API_36.1）人机对局跑通；`suspend/resume` 接 `visibilitychange`
-
-### Phase A2 — Android 打包与验证
-- [ ] `tauri android build`（APK/AAB）；签名配置
-- [ ] 真机冒烟 + 功耗策略验证
-- **验收**：APK 安装可玩；切后台自动挂起
-
-### Phase P — 持续打磨（截图迭代常态化）
-- 每轮：改样式 → 截图 → 读图 → 修；建立视觉回归基线图库
-
----
-
-## 6. 风险与缓解
-
-| 风险 | 等级 | 缓解 |
+| 项 | 命令 | 结果 |
 |---|---|---|
-| Tauri Android 插件 API 年轻（文档少） | 中 | 我们的需求面极窄（spawn/写行/事件）；Kotlin 逻辑已在 RN 阶段验证，平移即可；卡壳时备选 Rust 直 spawn |
-| Android NDK 未安装 | 低 | `sdkmanager ndk;26.x` 一次性解决（Phase A 前置检查） |
-| WebView 碎片化（Android） | 低 | UI 仅用基础 CSS（flex/absolute/transform）；不依赖新 CSS 特性 |
-| 高频 info 行 IPC 压力 | 低 | 默认 movetime 模式行率低；辅助 infinite 模式预留 Rust 侧合帧 |
-| Rust 学习曲线 | 低 | 引擎桥逻辑简单（无复杂所有权场景）；模板代码即 80% |
-| 事件泄漏/进程残留 | 中 | 前端卸载时 `invoke('engine_stop')` 全量清理；Rust 侧 app 退出时 kill all（对齐 RN 版 `invalidate()`） |
+| 类型检查（全仓 + 应用） | `pnpm typecheck`、`npx tsc --noEmit`（apps/desktop） | 通过 |
+| Rust 构建 | `cargo check`（apps/desktop/src-tauri） | 通过 |
+| 单元测试 | `pnpm test` | **12 套件 / 116 用例全绿** |
+| 真实引擎链路 | `pnpm smoke:engines` | 握手 → EvalFile → 搜索 → 合法着法校验通过 |
+| 模式 2 原生选项 | `pnpm smoke:engines` | 确认上报 `UCI_LimitStrength` / `UCI_Elo 1350..2850` / `Skill Level 0..20`，两个极端 Elo 各搜索一次且着法合法 |
+| perft 对拍 | `pnpm probe:perft 4 --divide` | 与 2023-03-05 逐根着法完全一致 |
+| 前端生产构建 | `pnpm build:frontend` | 通过（含 ONNX 模式） |
 
 ---
 
-## 7. 现有仓库处置
+## 9. 已知局限与后续方向
 
-| 路径 | 处置 |
-|---|---|
-| `packages/*` | 保留（复用） |
-| `apps/chessapp`（RN） | **冻结保留**：作为 UI 平移的参考实现与回退选项；Tauri 版稳定后可归档删除 |
-| `apps/chessapp/spec`、android/windows 原生工程 | 随 RN 冻结（Kotlin ProcessBuilder 逻辑平移进 Tauri 插件） |
-| `scripts/fetch-engines.ps1`、`sync-android-engines.ps1`、`smoke-engines.ts`、`probe-perft.ts` | 保留（引擎获取/验证与框架无关） |
-| `docs/01-tech-selection.md` | 历史存档（头部加注记） |
-| Metro/Gradle/RNW 相关配置 | 随 RN 冻结 |
-
----
-
-## 8. 开发工作流
-
-```powershell
-# 日常开发（Windows）
-pnpm --filter desktop tauri dev        # Vite HMR + Rust 增量编译
-
-# 截图迭代（复用现有脚本）
-powershell scripts/screenshot-window.ps1 -ProcessName chesslab -OutFile .shot.png
-
-# 引擎准备
-pnpm fetch:engines                     # 下载官方二进制到 third_party/
-# Phase W2 起由 tauri build/dev 自动携带（resources），或手动拷至
-# apps/desktop/src-tauri/target/... 旁的 engines/（开发期）
-
-# 打包
-pnpm --filter desktop tauri build
-```
-
-**Android（Phase A）**
-```powershell
-pnpm --filter desktop tauri android init
-pnpm --filter desktop tauri android dev    # 连接模拟器/真机
-pnpm --filter desktop tauri android build  # APK/AAB
-# 截图：adb shell screencap + pull（现有工作流）
-```
-
----
-
-## 9. 待定决策（实现中确认）
-
-- [ ] 引擎资源打包方式：Tauri `resources` vs sidecar（倾向 resources，路径处理更直白）
-- [ ] 持久化落地：Phase W2 先内存 + JSON 文件（tauri-plugin-fs）；SQLite（tauri-plugin-sql）按需后置
-- [ ] Android 上 Rust 直 spawn（绕过 Kotlin 插件）是否作为 A2 优化项
-- [ ] 自动更新（tauri-plugin-updater）是否纳入 W3
+| 局限 | 说明 | 计划 |
+|---|---|---|
+| 长捉（`perpetual-chase`） | 捉 / 兑 / 献、牵制、保护、过河兵例外等数十条例外未实现，目前一律按和棋 | 引入简化版长捉识别，再逐步补全 |
+| 双方均禁（双长将等） | 按和棋处理，未细分「先提议变着」/ 双负 | 按《象棋竞赛规则》细化 |
+| `persistence` 未接入 | 无对局存储 / 无棋谱导出（`GameRepository` 接口与 memory / node-file 实现已就绪） | 接 Tauri fs 或 SQLite |
+| vendor 允许「吃将」 | 非法 FEN（被将军方轮走）下可走出「吃掉对方将帅」。正常对局不可能到达该局面 | 可在适配层拒绝吃将着法 |
+| 残局 `solution` 仅参考 | 早期注释称「基本杀法 · 单步可解」，实测并非单步杀着；已更正注释 | 如需严格答案需引擎重新校验 |
+| 模式 3 无辅助分析 | 模型只出 policy + value，没有可加深的 MultiPV 流 | 可用 top-N 概率自行渲染分析条（需扩展 `AssistLine`） |
+| 模式 3 资产体积 | 模型 23.2 MB + onnxruntime 运行时 40.6 MB；Vite 还会额外 emit 一份它静态引用的 WebGPU wasm | 可改为按需下载 / 只保留一套 wasm |
+| 模式 2 与引擎版本绑定 | 只有 ≤ 2023-03-05 的 Pikafish 提供 `Skill Level` / `UCI_Elo` | 换引擎时同步更新 `PIKAFISH_STRENGTH_OPTIONS` |
+| `images/` 截图 | 首页与设置页布局已变，设置页 / 残局页截图已移除待补拍；难度模态框尚无截图 | 补拍后写回 README |
+| 截图自动化 | `scripts/screenshot-window.ps1` / `click-window.ps1` 依赖 `Get-Process ... MainWindowHandle` 取窗口，可能命中 Tauri 的隐藏辅助窗口而拍出无效图 | 改为按窗口标题枚举（`EnumWindows`）后再截图 |

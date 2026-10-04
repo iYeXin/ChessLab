@@ -3,14 +3,13 @@
   "compilerOptions": {
     "types": ["node"],
     "paths": {
-      "@chesslab/rules-core": ["./packages/rules-core/src/index.ts"],
-      "@chesslab/rules-chess": ["./packages/rules-chess/src/index.ts"],
-      "@chesslab/rules-xiangqi": ["./packages/rules-xiangqi/src/index.ts"],
-      "@chesslab/engine-uci": ["./packages/engine-uci/src/index.ts"],
-      "@chesslab/engine-process": ["./packages/engine-process/src/index.ts"],
-      "@chesslab/game-session": ["./packages/game-session/src/index.ts"],
-      "@chesslab/persistence": ["./packages/persistence/src/index.ts"],
-      "@chesslab/puzzles": ["./packages/puzzles/src/index.ts"]
+      "@chessnext/rules-core": ["./packages/rules-core/src/index.ts"],
+      "@chessnext/rules-xiangqi": ["./packages/rules-xiangqi/src/index.ts"],
+      "@chessnext/engine-uci": ["./packages/engine-uci/src/index.ts"],
+      "@chessnext/game-session": ["./packages/game-session/src/index.ts"],
+      "@chessnext/engine-onnx": ["./packages/engine-onnx/src/index.ts"],
+      "@chessnext/persistence": ["./packages/persistence/src/index.ts"],
+      "@chessnext/puzzles": ["./packages/puzzles/src/index.ts"]
     }
   },
   "include": [

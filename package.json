@@ -1,26 +1,29 @@
 {
-  "name": "chesslab",
+  "name": "chessnext",
   "private": true,
-  "version": "0.3.3",
-  "description": "Cross-platform chess & xiangqi app (React Native: Android + Windows)",
+  "version": "0.4.0-alpha",
+  "description": "Experimental xiangqi-only research build (Tauri 2 + React)",
   "packageManager": "pnpm@11.21.0",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
+    "dev": "pnpm stage:engines && pnpm --filter desktop tauri dev",
+    "stage:engines": "node scripts/stage-engines.mjs",
+    "fetch:assets": "node scripts/fetch-assets.mjs",
     "typecheck": "tsc -b tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "smoke:engines": "tsx scripts/smoke-engines.ts",
+    "probe:perft": "tsx scripts/probe-perft.ts",
+    "probe:moves": "tsx scripts/probe-moves.ts",
     "fetch:engines": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/fetch-engines.ps1",
     "fetch:engines:win": "powershell -ExecutionPolicy Bypass -File scripts/fetch-engines.ps1",
     "sync:jniLibs": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/sync-android-engines.ps1",
     "build": "node build.js",
     "build:windows": "node build.js --windows",
     "build:android": "node build.js --android",
-    "android": "pnpm --filter chessapp android",
-    "windows": "pnpm --filter chessapp windows",
-    "start": "pnpm --filter chessapp start"
+    "build:frontend": "pnpm --filter desktop build"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

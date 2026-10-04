@@ -1,4 +1,4 @@
-package com.chesslab.app
+package com.chessnext.app
 
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge

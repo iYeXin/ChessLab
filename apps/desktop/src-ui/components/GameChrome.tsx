@@ -1,12 +1,12 @@
 import React, { useEffect, useRef } from 'react';
-import type { GameResult, HistoryEntry, Side } from '@chesslab/rules-core';
-import type { AssistLine } from '@chesslab/game-session';
+import type { GameResult, HistoryEntry, Side } from '@chessnext/rules-core';
+import type { AssistLine } from '@chessnext/game-session';
 import type { GameTheme } from '../theme/games';
 import { formatHistoryForDisplay } from '../game/format-history';
 
 /**
- * DOM port of apps/chessapp/src/components/common/GameChrome.tsx.
- * Layout metrics and colors follow the RN reference 1:1.
+ * Shared in-game chrome: top bar, status banner, control bar, move list,
+ * assist panel, result overlay and history modal.
  */
 
 export function TopBar(props: {
@@ -77,18 +77,14 @@ export function StatusBanner(props: {
   check: boolean;
   bootError: string | null;
   result: GameResult | null;
-  gameType?: import('@chesslab/rules-core').GameType;
   isWatch?: boolean;
 }) {
   const { theme } = props;
   let text = '';
   let color = theme.textSecondary;
 
-  const sideLabel = (side: Side) => {
-    if (props.gameType === 'xiangqi') return side === 'w' ? '红' : '黑';
-    if (props.gameType === 'chess') return side === 'w' ? '白' : '黑';
-    return side === 'w' ? '红/白' : '黑';
-  };
+  /** Xiangqi side token → 红 / 黑. */
+  const sideLabel = (side: Side) => (side === 'w' ? '红' : '黑');
 
   if (props.bootError) {
     const raw = props.bootError;
@@ -160,15 +156,13 @@ function describeResult(r: GameResult, humanSide: Side): string {
     resign: r.winner ? (win ? '对方认输' : '你已认输') : '',
     timeout: r.winner ? (win ? '对方超时' : '超时判负') : '',
     'perpetual-check': r.winner ? (win ? '对方长将判负' : '长将判负（须变着）') : '',
-    stalemate: '逼和（无子可动）',
     repetition: '三次重复局面判和',
-    'fifty-move-rule': '五十回合规则判和',
     'insufficient-material': '子力不足判和',
     agreement: '和棋',
   };
   const head = r.winner === null ? '和棋' : win ? '胜利 🎉' : '失败';
   const tail = reasonMap[r.reason] ?? r.reason;
-  return tail && !tail.includes(win === true ? '取' : '') ? `${head} · ${tail}` : head;
+  return tail ? `${head} · ${tail}` : head;
 }
 
 /** Neutral, side-perspective reason text (no 胜利/失败 wording). */
@@ -179,9 +173,7 @@ export function reasonText(r: GameResult): string {
     resign: '认输',
     timeout: '超时',
     'perpetual-check': '长将判负',
-    stalemate: '逼和',
     repetition: '三次重复判和',
-    'fifty-move-rule': '五十回合判和',
     'insufficient-material': '子力不足判和',
     agreement: '双方同意和棋',
   };
@@ -248,12 +240,12 @@ export function ControlsBar(props: { theme: GameTheme; controls: ControlDef[] })
   );
 }
 
-export function MoveListStrip(props: { theme: GameTheme; history: readonly HistoryEntry[]; gameType?: import('@chesslab/rules-core').GameType; xiangqiNotation?: 'iccs' | 'traditional' }) {
+export function MoveListStrip(props: { theme: GameTheme; history: readonly HistoryEntry[]; xiangqiNotation?: 'iccs' | 'traditional' }) {
   const pairs: string[] = [];
   let displayS = props.history.map(h => h.san);
-  if (props.gameType === 'xiangqi' && props.xiangqiNotation === 'traditional') {
+  if (props.xiangqiNotation === 'traditional') {
     try {
-      displayS = formatHistoryForDisplay(props.history, 'xiangqi', 'traditional');
+      displayS = formatHistoryForDisplay(props.history, 'traditional');
     } catch {}
   }
   for (let i = 0; i < props.history.length; i += 2) {
@@ -376,7 +368,6 @@ export function ResultOverlay(props: {
   headline: string;
   detail: string;
   history?: readonly HistoryEntry[];
-  gameType?: import('@chesslab/rules-core').GameType;
   xiangqiNotation?: 'iccs' | 'traditional';
   onNewGame(): void;
   onClose(): void;
@@ -447,18 +438,18 @@ export function ResultOverlay(props: {
           </button>
         </div>
       </div>
-      {showHistory && hasHistory ? <HistoryModal theme={theme} history={props.history!} gameType={props.gameType} xiangqiNotation={props.xiangqiNotation} onClose={() => setShowHistory(false)} /> : null}
+      {showHistory && hasHistory ? <HistoryModal theme={theme} history={props.history!} xiangqiNotation={props.xiangqiNotation} onClose={() => setShowHistory(false)} /> : null}
     </>
   );
 }
 
-export function HistoryModal(props: { theme: GameTheme; history: readonly HistoryEntry[]; onClose(): void; gameType?: import('@chesslab/rules-core').GameType; xiangqiNotation?: 'iccs' | 'traditional' }) {
+export function HistoryModal(props: { theme: GameTheme; history: readonly HistoryEntry[]; onClose(): void; xiangqiNotation?: 'iccs' | 'traditional' }) {
   const { theme } = props;
   const pairs: string[] = [];
   let displayS = props.history.map(h => h.san);
-  if (props.gameType === 'xiangqi' && props.xiangqiNotation === 'traditional') {
+  if (props.xiangqiNotation === 'traditional') {
     try {
-      displayS = formatHistoryForDisplay(props.history, 'xiangqi', 'traditional');
+      displayS = formatHistoryForDisplay(props.history, 'traditional');
     } catch {}
   }
   for (let i = 0; i < props.history.length; i += 2) {

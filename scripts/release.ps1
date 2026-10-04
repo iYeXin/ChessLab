@@ -60,7 +60,7 @@ if ($LASTEXITCODE -ne 0) { throw "git commit failed (nothing to commit?)" }
 Write-Host "`n[release] Tagging $Tag ..." -ForegroundColor Cyan
 $existing = & git tag --list $Tag
 if ($existing) { throw "Tag $Tag already exists" }
-& git tag -a $Tag -m "ChessLab $Tag"
+& git tag -a $Tag -m "ChessNext $Tag"
 
 if ($SkipPush) {
   Write-Host "`n[release] --SkipPush: not pushing. Run manually:" -ForegroundColor Yellow

@@ -1,16 +1,18 @@
-# Fetches pinned engine binaries for development/testing:
-#   - Stockfish 18  (official GitHub release assets)
-#   - Pikafish 2026-01-02 (single .7z with all platforms; extracted via bsdtar)
+# Fetches the pinned engine binary for development/testing:
+#   - Pikafish 2023-03-05 (.zip, all platforms in one archive)
+#
+# Why this version: it is the newest Pikafish that exposes the classic
+# Stockfish-family strength controls (`Skill Level`, `UCI_LimitStrength`,
+# `UCI_Elo` 1350-2850), which the "engine options" difficulty mode drives
+# directly. Later releases dropped them. Its NNUE is also small (~18 MB).
 #
 # Layout produced (never committed):
 #   third_party/engines/
-#     windows-x64/stockfish/stockfish.exe
 #     windows-x64/pikafish/pikafish-avx2.exe (+ pikafish.nnue)
-#     android-arm64/libstockfish.so
 #     android-arm64/libpikafish.so (+ pikafish.nnue)
-#     .engines.json            <- manifest consumed by smoke-engines.ts
+#     .engines.json            <- manifest consumed by scripts/smoke-engines.ts
 #
-# GPL note: these are unmodified upstream binaries. The exact versions are
+# GPL note: this is an unmodified upstream binary. The exact version is
 # recorded here; ship COPYING text + source links with any distribution.
 
 $ErrorActionPreference = "Stop"
@@ -30,124 +32,91 @@ function Get-Asset([string]$Url, [string]$OutFile) {
     if (-not (Test-Path $OutFile)) { throw "download failed: $Url" }
 }
 
-# ---------------- Stockfish ----------------
-$sfDir = Join-Path $Dest "windows-x64/stockfish"
-New-Item -ItemType Directory -Force -Path $sfDir | Out-Null
-$sfZip = Join-Path $TempDir "stockfish-sf_18.zip"
+# ---------------- Pikafish ----------------
+$pfVersion = "2023-03-05"
+$pfZip = Join-Path $TempDir "Pikafish.$pfVersion.zip"
+Get-Asset "https://github.com/official-pikafish/Pikafish/releases/download/Pikafish-$pfVersion/Pikafish.$pfVersion.zip" $pfZip
 
+# Extract to a staging dir: the archive holds AUTHORS / Android / Linux / MacOS /
+# Windows / pikafish.nnue at its root.
+$stage = Join-Path $TempDir "pikafish-$pfVersion"
+if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+New-Item -ItemType Directory -Force -Path $stage | Out-Null
+
+$extracted = $false
 try {
-    # Preferred build: AVX2. Fallbacks below keep older CPUs working.
-    Get-Asset "https://github.com/official-stockfish/Stockfish/releases/download/sf_18/stockfish-windows-x86-64-avx2.zip" $sfZip
+  Expand-Archive -Force -Path $pfZip -DestinationPath $stage
+  $extracted = $true
 } catch {
-    Write-Warning "avx2 asset missing, trying plain x86-64"
-    Get-Asset "https://github.com/official-stockfish/Stockfish/releases/download/sf_18/stockfish-windows-x86-64.zip" $sfZip
+  Write-Warning "Expand-Archive failed ($($_.Exception.Message)); trying unzip/tar"
 }
-Expand-Archive -Force -Path $sfZip -DestinationPath $sfDir
-# The zip contains a `stockfish/` folder with sources; flatten the exe out.
-$sfExe = Get-ChildItem $sfDir -Recurse -Filter "stockfish*.exe" | Select-Object -First 1
-if (-not $sfExe) { throw "no stockfish exe inside downloaded zip" }
-Copy-Item $sfExe.FullName (Join-Path $sfDir "stockfish.exe") -Force
+if (-not $extracted) {
+  $unzip = Get-Command unzip -ErrorAction SilentlyContinue
+  if ($unzip) {
+    try { & unzip -oq $pfZip -d $stage; if ($LASTEXITCODE -eq 0) { $extracted = $true } } catch {}
+  }
+}
+if (-not $extracted) {
+  try { tar -xf $pfZip -C $stage; if ($LASTEXITCODE -eq 0) { $extracted = $true } } catch {}
+}
+if (-not $extracted) { throw "failed to extract $pfZip (need Expand-Archive, unzip or tar)" }
+
+$allExtracted = Get-ChildItem $stage -Recurse
+
+# ---- Windows x64 ----
+$pfWinDir = Join-Path $Dest "windows-x64/pikafish"
+New-Item -ItemType Directory -Force -Path $pfWinDir | Out-Null
+
+$pfWin = $allExtracted | Where-Object { $_.FullName -match "[/\\]Windows[/\\]pikafish-avx2\.exe$" } | Select-Object -First 1
+if (-not $pfWin) {
+  $pfWin = $allExtracted | Where-Object { $_.FullName -match "[/\\]Windows[/\\]pikafish\.exe$" } | Select-Object -First 1
+}
+if (-not $pfWin) {
+  $pfWin = $allExtracted | Where-Object { $_.Name -like "pikafish*.exe" } | Select-Object -First 1
+}
+if (-not $pfWin) { throw "no pikafish windows exe found in archive" }
+$pfWinDest = Join-Path $pfWinDir "pikafish-avx2.exe"
+Copy-Item $pfWin.FullName $pfWinDest -Force
 # Unblock-File is Windows-only; guard by OS check to avoid "does not support Linux" on Ubuntu runners
 $onWindows = $IsWindows
 if ($null -eq $onWindows) { $onWindows = $env:OS -eq 'Windows_NT' }
 if ($onWindows) {
-  try { Unblock-File (Join-Path $sfDir "stockfish.exe") -ErrorAction SilentlyContinue } catch {}
+  try { Unblock-File $pfWinDest -ErrorAction SilentlyContinue } catch {}
 }
-
-# Android arm64 build (for jniLibs sync); prefer the faster dotprod variant.
-$sfAndroidTar = Join-Path $TempDir "stockfish-android-armv8-dotprod.tar"
-try {
-    Get-Asset "https://github.com/official-stockfish/Stockfish/releases/download/sf_18/stockfish-android-armv8-dotprod.tar" $sfAndroidTar
-} catch {
-    Write-Warning "dotprod asset missing, falling back to plain armv8"
-    Get-Asset "https://github.com/official-stockfish/Stockfish/releases/download/sf_18/stockfish-android-armv8.tar" $sfAndroidTar
-}
-$sfAndroidDir = Join-Path $Dest "android-arm64"
-New-Item -ItemType Directory -Force -Path $sfAndroidDir | Out-Null
-tar -xf $sfAndroidTar -C $sfAndroidDir
-# The tarball nests everything under stockfish/<binary> plus sources; pick the
-# executable FILE (not a directory!) matching the binary name.
-$sfSoSrc = Get-ChildItem $sfAndroidDir -Recurse -File |
-    Where-Object { $_.Name -match "^stockfish-android-armv8" } |
-    Select-Object -First 1
-if ($sfSoSrc) {
-    Copy-Item $sfSoSrc.FullName (Join-Path $sfAndroidDir "libstockfish.so") -Force
-    Write-Host "android arm64 engine: $(Join-Path $sfAndroidDir 'libstockfish.so') ($([math]::Round($sfSoSrc.Length/1MB)) MB)"
-} else {
-    Write-Warning "android stockfish binary not found inside tarball"
-}
-
-# ---------------- Pikafish ----------------
-$pfVersion = "2026-01-02"
-$pf7z = Join-Path $TempDir "Pikafish.$pfVersion.7z"
-Get-Asset "https://github.com/official-pikafish/Pikafish/releases/download/Pikafish-$pfVersion/Pikafish.$pfVersion.7z" $pf7z
-
-$pfBase = Join-Path $Dest "windows-x64\pikafish"
-$pfAndroidDir = Join-Path $Dest "android-arm64"
-New-Item -ItemType Directory -Force -Path $pfBase, $pfAndroidDir | Out-Null
-
-# .7z needs 7z/bsdtar (Windows tar = bsdtar, Ubuntu tar = GNU tar which can't read 7z)
-$extracted = $false
-$sevenZip = Get-Command 7z -ErrorAction SilentlyContinue
-if ($sevenZip) {
-  try {
-    & 7z x $pf7z "-o$pfBase" -y | Out-Null
-    if ($LASTEXITCODE -eq 0) { $extracted = $true }
-  } catch {}
-}
-if (-not $extracted) {
-  $bsdTar = Get-Command bsdtar -ErrorAction SilentlyContinue
-  if ($bsdTar) {
-    try { & bsdtar -xf $pf7z -C $pfBase; if ($LASTEXITCODE -eq 0) { $extracted = $true } } catch {}
-  }
-}
-if (-not $extracted) {
-  try { tar -xf $pf7z -C $pfBase; if ($LASTEXITCODE -eq 0) { $extracted = $true } } catch {}
-}
-if (-not $extracted) { throw "failed to extract $pf7z (need 7z or bsdtar)" }
-$allExtracted = Get-ChildItem $pfBase -Recurse
 
 $pfNnue = $allExtracted | Where-Object { $_.Extension -eq ".nnue" } | Select-Object -First 1
-# Archive layout: Windows\pikafish-avx2.exe, Android\pikafish-armv8[-dotprod], pikafish.nnue
-$pfWin = $allExtracted |
-    Where-Object { $_.FullName -match "[/\\]Windows[/\\]pikafish-avx2\.exe$" } |
-    Select-Object -First 1
-if (-not $pfWin) {
-    $pfWin = $allExtracted | Where-Object { $_.Name -like "pikafish*.exe" } | Select-Object -First 1
-}
-if (-not $pfWin) { throw "no pikafish windows exe found in archive" }
-$pfWinDest = Join-Path $pfBase "pikafish-avx2.exe"
-if ($pfWin.FullName -ne $pfWinDest) { Copy-Item $pfWin.FullName $pfWinDest -Force }
+if (-not $pfNnue) { throw "no pikafish.nnue found in archive" }
+Copy-Item $pfNnue.FullName (Join-Path $pfWinDir "pikafish.nnue") -Force
 
-if ($pfNnue) {
-  $pfNnueDestWin = Join-Path $pfBase "pikafish.nnue"
-  if ($pfNnue.FullName -ne $pfNnueDestWin) { Copy-Item $pfNnue.FullName $pfNnueDestWin -Force }
-}
+# ---- Android arm64 ----
+# Android 10+ forbids exec() from the writable app dir; the .so naming +
+# nativeLibraryDir trick is handled by build.js / sync-android-engines.ps1.
+$pfAndroidDir = Join-Path $Dest "android-arm64"
+New-Item -ItemType Directory -Force -Path $pfAndroidDir | Out-Null
 
-# Android binaries live in the same archive; prefer dotprod when present.
 $pfAnd = $allExtracted |
-    Where-Object { -not $_.PSIsContainer -and $_.FullName -match "[/\\]Android[/\\]pikafish-armv8-dotprod$" } | Select-Object -First 1
+    Where-Object { -not $_.PSIsContainer -and $_.FullName -match "[/\\]Android[/\\]pikafish-armv8-dotprod$" } |
+    Select-Object -First 1
 if (-not $pfAnd) {
-    $pfAnd = $allExtracted |
-        Where-Object { -not $_.PSIsContainer -and $_.FullName -match "[/\\]Android[/\\]pikafish-armv8$" } | Select-Object -First 1
+  $pfAnd = $allExtracted |
+      Where-Object { -not $_.PSIsContainer -and $_.FullName -match "[/\\]Android[/\\]pikafish-armv8$" } |
+      Select-Object -First 1
 }
 if ($pfAnd) {
-  $pfAndDest = Join-Path $pfAndroidDir "libpikafish.so"
-  if ($pfAnd.FullName -ne $pfAndDest) { Copy-Item $pfAnd.FullName $pfAndDest -Force }
+  Copy-Item $pfAnd.FullName (Join-Path $pfAndroidDir "libpikafish.so") -Force
+} else {
+  Write-Warning "android arm64 pikafish binary not found inside archive"
 }
-if ($pfNnue) {
-  $pfNnueDestAnd = Join-Path $pfAndroidDir "pikafish.nnue"
-  if ($pfNnue.FullName -ne $pfNnueDestAnd) { Copy-Item $pfNnue.FullName $pfNnueDestAnd -Force }
-}
+Copy-Item $pfNnue.FullName (Join-Path $pfAndroidDir "pikafish.nnue") -Force
 
 # ---------------- Manifest ----------------
 $manifest = [ordered]@{
-    stockfishPath   = if ($sfExe) { $sfExe.FullName } else { $null }
-    pikafishPath    = (Join-Path $pfBase "pikafish-avx2.exe")
-    pikafishNnuePath = if ($pfNnue) { (Join-Path $pfBase "pikafish.nnue") } else { $null }
+    version          = $pfVersion
+    pikafishPath     = (Join-Path $pfWinDir "pikafish-avx2.exe")
+    pikafishNnuePath = (Join-Path $pfWinDir "pikafish.nnue")
 }
 $manifest | ConvertTo-Json | Set-Content (Join-Path $Dest ".engines.json")
 
 Write-Host ""
-Write-Host "Done. Engines under $Dest"
+Write-Host "Done. Pikafish $pfVersion under $Dest"
 Write-Host ($manifest | ConvertTo-Json)

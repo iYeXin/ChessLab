@@ -1,7 +1,7 @@
-import type { GameType, MoveUci } from '@chesslab/rules-core';
+import type { GameType, MoveUci } from '@chessnext/rules-core';
 
 /** Concrete engines shipped with the app; open string keeps it extensible. */
-export type EngineId = 'stockfish' | 'pikafish' | (string & {});
+export type EngineId = 'pikafish' | (string & {});
 
 export type UciOptionValue = string | number | boolean;
 
@@ -16,7 +16,7 @@ export interface EngineOptionDef {
 
 /** Search constraints for one `go` command. */
 export interface GoLimits {
-  /** Fixed thinking time in milliseconds (preferred for casual play). */
+  /** Fixed thinking time in milliseconds (safety cap on slow devices). */
   movetimeMs?: number;
   depth?: number;
   nodes?: number;
@@ -61,9 +61,9 @@ export type UciEvent =
 
 /**
  * Transport-agnostic handle to a running engine binary. Implementations:
- * Node child_process (tests/desktop dev tools), Android native module
- * (ProcessBuilder under the hood), Windows native module (CreateProcess),
- * and — future web target — a Worker around WASM builds.
+ * the Tauri process bridge used by the app, plus a Node child_process
+ * transport for dev tooling (`scripts/node-transport.ts`, intentionally kept
+ * out of this package so bundlers never pull `node:child_process` in).
  */
 export interface EngineTransport {
   write(line: string): void;
@@ -78,18 +78,21 @@ export interface EngineProfile {
   id: EngineId;
   gameType: GameType;
   displayName: string;
-  /** Binary base name without platform extension ("stockfish" / "pikafish"). */
+  /** Binary base name without platform extension ("pikafish"). */
   binaryName: string;
   /** Applied right after handshake, before readyok ack. */
   defaultOptions: Record<string, UciOptionValue>;
-  /** Supports UCI_LimitStrength + UCI_Elo (Stockfish does, Pikafish historically not). */
-  supportsLimitStrength: boolean;
-  /** Supports Skill Level spin option. */
-  supportsSkillLevel: boolean;
   /**
    * Pikafish ships its NNUE as an external file: the host must resolve an
    * absolute path and pass it through `EvalFile` before first search.
-   * Stockfish embeds its default nets, so this stays false there.
    */
   requiresExternalNnue: boolean;
+  /**
+   * Exposes `UCI_LimitStrength` + `UCI_Elo`, i.e. calibrated native strength
+   * limiting. True for Pikafish <= 2023-03-05 (the version we ship); later
+   * Pikafish releases dropped it.
+   */
+  supportsLimitStrength: boolean;
+  /** Exposes the `Skill Level` spin option (0..20). */
+  supportsSkillLevel: boolean;
 }

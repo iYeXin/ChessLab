@@ -1,4 +1,4 @@
-import type { GameResult, GameType, MoveUci } from '@chesslab/rules-core';
+import type { GameResult, GameType, MoveUci } from '@chessnext/rules-core';
 
 /**
  * Persistence seam. MVP ships memory + Node-file implementations; the app

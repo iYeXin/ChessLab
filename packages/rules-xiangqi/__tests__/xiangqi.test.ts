@@ -22,15 +22,24 @@ describe('XiangqiRules', () => {
     expect(r.perft(2)).toBe(1920);
   }, 30_000);
 
-  it('perft(3) — documents a known upstream divergence', () => {
-    // Pikafish 2026-01-02 (`go perft 3`) reports 79666 nodes; the vendored
-    // xiangqi.js computes 79446 (220 short). Depth 1 and 2 match exactly
-    // (44 / 1920), so the divergence is an edge case in upstream's generator
-    // — most likely around flying-general interactions in rare branches.
-    // Tracked as tech debt: patch vendor or replace rules core later.
+  it('perft(3) matches Pikafish ground truth exactly', () => {
+    // Pikafish 2026-01-02 (`go perft 3`) reports 79666 nodes.
+    //
+    // This used to be 79446: the vendored xiangqi.js ships a `perft()` helper
+    // that generates PSEUDO-legal moves and then filters on `king_attacked(turn)`
+    // AFTER the move — by which point `turn` is the opponent. It therefore
+    // accepted moves leaving the mover's own general en prise and discarded
+    // checking moves. `XiangqiRules.perft()` now walks the verified legal move
+    // list instead. Verified against the engine at depth 3 per root move
+    // (44/44 identical) and at depth 4 (3_290_240, 44/44 identical).
     const r = new XiangqiRules();
-    expect(r.perft(3)).toBe(79446);
+    expect(r.perft(3)).toBe(79666);
   }, 30_000);
+
+  it('perft(4) matches Pikafish ground truth exactly', () => {
+    const r = new XiangqiRules();
+    expect(r.perft(4)).toBe(3_290_240);
+  }, 120_000);
 
   it('plays cannon-to-center (中炮) and horse moves', () => {
     const r = new XiangqiRules();

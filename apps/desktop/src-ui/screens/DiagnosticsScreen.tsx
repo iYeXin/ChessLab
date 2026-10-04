@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { themeClassFor, CHESS_THEME } from '../theme/games';
+import { THEME_CLASS, XIANGQI_THEME } from '../theme/games';
 import { TopBar } from '../components/GameChrome';
 import { invoke } from '@tauri-apps/api/core';
 import { createTauriTransport } from '../transport/tauri';
-import { UciEngineDriver, getProfile } from '@chesslab/engine-uci';
+import { PIKAFISH_PROFILE, UciEngineDriver } from '@chessnext/engine-uci';
+import { XiangqiRules } from '@chessnext/rules-xiangqi';
 
 type ProbeState = 'idle' | 'running' | 'ok' | 'fail';
 interface ProbeResult {
@@ -17,39 +18,40 @@ interface ProbeResult {
   durationMs?: number;
 }
 
+const ENGINE_ID = 'pikafish';
+
 export function DiagnosticsScreen(props: { onBack(): void }) {
-  const theme = CHESS_THEME;
-  const [stockfish, setStockfish] = useState<ProbeResult>({ engine: 'Stockfish', state: 'idle' });
+  const theme = XIANGQI_THEME;
   const [pikafish, setPikafish] = useState<ProbeResult>({ engine: 'Pikafish', state: 'idle' });
   const [nnue, setNnue] = useState<string | null>(null);
   const [windowInfo, setWindowInfo] = useState<string>('');
 
-  const runProbe = async (profileId: 'stockfish' | 'pikafish', setter: (r: ProbeResult) => void) => {
+  const runProbe = async () => {
     const t0 = Date.now();
-    setter({ engine: profileId === 'stockfish' ? 'Stockfish' : 'Pikafish', state: 'running' });
+    setPikafish({ engine: 'Pikafish', state: 'running' });
     try {
-      const profile = getProfile(profileId);
-      const driver = new UciEngineDriver(profile);
-      const transport = await createTauriTransport(profileId);
+      const driver = new UciEngineDriver(PIKAFISH_PROFILE);
+      const transport = await createTauriTransport(ENGINE_ID);
       await driver.start(transport);
-      const name = driver.name || profileId;
+      const name = driver.name || ENGINE_ID;
       const opts = [...driver.availableOptions.keys()];
-      // NNUE check for pikafish
       let evalFile: string | null = null;
-      if (profileId === 'pikafish') {
-        try {
-          evalFile = await invoke<string | null>('engine_nnue_path');
-        } catch { }
-        if (evalFile) {
-          await driver.setOptions({ EvalFile: evalFile }).catch(() => { });
-        }
+      try {
+        evalFile = await invoke<string | null>('engine_nnue_path');
+      } catch {}
+      if (evalFile) {
+        await driver.setOptions({ EvalFile: evalFile }).catch(() => {});
       }
       await driver.newGame();
-      const fen = profileId === 'stockfish' ? 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1' : 'rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1';
-      const res = await driver.search({ fen }, { nodes: profileId === 'stockfish' ? 8000 : 2000 });
+      const rules = new XiangqiRules();
+      const legal = new Set(rules.moves().map(m => m.uci));
+      const res = await driver.search({ fen: rules.fen() }, { nodes: 2000 });
       await driver.quit();
-      setter({
-        engine: profileId === 'stockfish' ? 'Stockfish' : 'Pikafish',
+      if (!res.bestmove || !legal.has(res.bestmove)) {
+        throw new Error(`bestmove ${res.bestmove ?? '(none)'} is not a legal opening move`);
+      }
+      setPikafish({
+        engine: 'Pikafish',
         state: 'ok',
         name,
         options: opts.slice(0, 12),
@@ -58,8 +60,8 @@ export function DiagnosticsScreen(props: { onBack(): void }) {
         durationMs: Date.now() - t0,
       });
     } catch (e) {
-      setter({
-        engine: profileId === 'stockfish' ? 'Stockfish' : 'Pikafish',
+      setPikafish({
+        engine: 'Pikafish',
         state: 'fail',
         error: String(e),
         durationMs: Date.now() - t0,
@@ -75,7 +77,7 @@ export function DiagnosticsScreen(props: { onBack(): void }) {
     } catch {
       setNnue(null);
     }
-    await Promise.all([runProbe('stockfish', setStockfish), runProbe('pikafish', setPikafish)]);
+    await runProbe();
   };
 
   useEffect(() => {
@@ -99,16 +101,15 @@ export function DiagnosticsScreen(props: { onBack(): void }) {
   );
 
   return (
-    <div className={themeClassFor('chess')} style={{ height: '100%', backgroundColor: '#F1EADC', display: 'flex', flexDirection: 'column' }}>
+    <div className={THEME_CLASS} style={{ height: '100%', backgroundColor: '#F1EADC', display: 'flex', flexDirection: 'column' }}>
       <TopBar theme={theme} title="引擎诊断" subtitle="DIAGNOSTICS" onBack={props.onBack} />
       <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--sp-l)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-m)', maxWidth: 480, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
         <div style={{ background: '#F7F3EA', borderRadius: 12, border: '1px solid #E9DFC8', padding: '10px 14px' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#7A5230', marginBottom: 6 }}>系统</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#A63A2B', marginBottom: 6 }}>系统</div>
           <div style={{ fontSize: 11, color: '#5C5343' }}>窗口：{windowInfo || `${window.innerWidth}x${window.innerHeight}`}</div>
           <div style={{ fontSize: 11, color: '#5C5343' }}>NNUE 路径：{nnue ?? '未找到（将使用内置）'}</div>
         </div>
 
-        {Card(stockfish)}
         {Card(pikafish)}
 
         <div style={{ display: 'flex', justifyContent: 'center', gap: 12, marginTop: 8 }}>
@@ -121,7 +122,7 @@ export function DiagnosticsScreen(props: { onBack(): void }) {
         </div>
 
         <div style={{ fontSize: 10, color: '#A2977F', textAlign: 'center', lineHeight: 1.6 }}>
-          检测流程：spawn → uci 握手 → 选项 → EvalFile → ucinewgame → 搜索
+          检测流程：spawn → uci 握手 → 选项 → EvalFile → ucinewgame → 搜索 → 合法着法校验
           <br />
           失败时请检查杀毒软件是否拦截引擎进程
         </div>

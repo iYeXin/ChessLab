@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createUciAssistEngine } from '../src/analysis';
 import type { AssistEngine, AssistSnapshot } from '../src/analysis';
-import { STOCKFISH_PROFILE } from '@chesslab/engine-uci';
-import { UciEngineDriver } from '@chesslab/engine-uci/src/driver';
-import type { EngineTransport } from '@chesslab/engine-uci/src/types';
+import { PIKAFISH_PROFILE } from '@chessnext/engine-uci';
+import { UciEngineDriver } from '@chessnext/engine-uci/src/driver';
+import type { EngineTransport } from '@chessnext/engine-uci/src/types';
 import type { EngineTurnRunner } from '../src/runner';
 import { GameSession, type SessionEvent } from '../src/session';
-import { ChessRules } from '@chesslab/rules-chess';
+import { XiangqiRules } from '@chessnext/rules-xiangqi';
 
 // ---------------------------------------------------------------------------
 // createUciAssistEngine (protocol level)
@@ -22,7 +22,7 @@ class ScriptedTransport implements EngineTransport {
   write(line: string): void {
     this.written.push(line);
     if (line === 'uci') {
-      this.feed('id name Stockfish 18');
+      this.feed('id name Pikafish 2026-01-02');
       this.feed('option name MultiPV type spin default 1 min 1 max 500');
       this.feed('uciok');
     } else if (line === 'isready') {
@@ -45,7 +45,7 @@ class ScriptedTransport implements EngineTransport {
 
 async function makeAssist() {
   const t = new ScriptedTransport();
-  const driver = new UciEngineDriver(STOCKFISH_PROFILE);
+  const driver = new UciEngineDriver(PIKAFISH_PROFILE);
   await driver.start(t);
   const assist = createUciAssistEngine(driver);
   return { assist, t, driver };
@@ -118,7 +118,7 @@ function fakeAssist() {
   const engine: AssistEngine = {
     begin(fen) {
       state.begins.push(fen);
-      linesCb?.([{ multipv: 1, depth: 9, uci: 'e7e5', scoreCp: 10, pv: ['e7e5'] }]);
+      linesCb?.([{ multipv: 1, depth: 9, uci: 'b9c7', scoreCp: 10, pv: ['b9c7'] }]);
     },
     stop() {
       state.stops += 1;
@@ -161,9 +161,9 @@ function countingRunner() {
 
 function makeSession(analysisFactory?: () => Promise<AssistEngine>) {
   const session = new GameSession({
-    rules: new ChessRules(),
+    rules: new XiangqiRules(),
     white: { kind: 'human', side: 'w' },
-    black: { kind: 'engine', side: 'b', profileId: 'stockfish', strengthLevel: 5 },
+    black: { kind: 'engine', side: 'b', profileId: 'pikafish', strengthLevel: 5 },
     engineRunnerFactory: () => nullRunner,
     analysisFactory,
   });
@@ -187,10 +187,10 @@ describe('GameSession assist mode integration', () => {
     expect(state.begins).toHaveLength(1); // kicked off at current position
     const assistEvents = events.filter(e => e.kind === 'assist');
     expect(assistEvents.length).toBeGreaterThanOrEqual(1);
-    expect(assistEvents[0]?.kind === 'assist' && assistEvents[0].lines[0]?.uci).toBe('e7e5');
+    expect(assistEvents[0]?.kind === 'assist' && assistEvents[0].lines[0]?.uci).toBe('b9c7');
 
     // Human moves -> engine's turn: analysis must PAUSE (no double load).
-    session.playHumanMove('e2e4');
+    session.playHumanMove('h2e2');
     expect(state.begins).toHaveLength(1); // no restart
     expect(state.stops).toBeGreaterThanOrEqual(1);
 
@@ -208,7 +208,7 @@ describe('GameSession assist mode integration', () => {
     await session.start();
     await session.enableAssist({ pauseOnOpponentTurn: false });
 
-    session.playHumanMove('e2e4');
+    session.playHumanMove('h2e2');
     expect(state.begins).toHaveLength(2); // restarted on the new position
     expect(state.stops).toBe(0);
 
@@ -234,9 +234,9 @@ describe('GameSession mobile power lifecycle', () => {
     const { engine, state } = fakeAssist();
     const { runner, state: runnerState } = countingRunner();
     const session = new GameSession({
-      rules: new ChessRules(),
+      rules: new XiangqiRules(),
       white: { kind: 'human', side: 'w' },
-      black: { kind: 'engine', side: 'b', profileId: 'stockfish', strengthLevel: 3 },
+      black: { kind: 'engine', side: 'b', profileId: 'pikafish', strengthLevel: 3 },
       engineRunnerFactory: () => runner,
       analysisFactory: async () => engine,
     });
@@ -248,7 +248,7 @@ describe('GameSession mobile power lifecycle', () => {
     expect(session.assistEnabled).toBe(true); // flag preserved across suspend
 
     // Foreground, make our move — opponent search gets issued.
-    session.playHumanMove('e2e4');
+    session.playHumanMove('h2e2');
     await vi.waitFor(() => expect(runnerState.requests).toBe(1));
 
     // Background DURING opponent thinking: in-flight search must be cancelled.
@@ -279,13 +279,13 @@ describe('GameSession hint reuse', () => {
     const runner: EngineTurnRunner = {
       profileId: 'fake',
       async requestMove() {
-        return { bestmove: 'g1f3' };
+        return { bestmove: 'h2e2' };
       },
       cancel() {},
       async dispose() {},
     };
     const session = new GameSession({
-      rules: new ChessRules(),
+      rules: new XiangqiRules(),
       white: { kind: 'human', side: 'w' },
       black: { kind: 'human', side: 'b' },
       engineRunnerFactory: () => {
@@ -295,8 +295,8 @@ describe('GameSession hint reuse', () => {
     });
     const m1 = await session.hint();
     const m2 = await session.hint();
-    expect(m1?.uci).toBe('g1f3');
-    expect(m2?.uci).toBe('g1f3');
+    expect(m1?.uci).toBe('h2e2');
+    expect(m2?.uci).toBe('h2e2');
     expect(created).toBe(1);
     await session.dispose();
   });

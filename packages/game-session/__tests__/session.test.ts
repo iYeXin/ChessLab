@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import type { EngineRunnerFactory, EngineTurnRunner } from '../src/runner';
 import { GameSession, type SessionEvent } from '../src/session';
 import { GameClock } from '../src/clock';
-import { ChessRules } from '@chesslab/rules-chess';
-import { XiangqiRules } from '@chesslab/rules-xiangqi';
+import { XiangqiRules } from '@chessnext/rules-xiangqi';
 
-const CHESS_START = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+/** Initial xiangqi position: red ('w') to move, 44 legal moves. */
+const XQ_START = 'rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1';
 
 /** Scripted engine: always answers with a fixed move for the requested side. */
 function scriptedRunner(bestmove: string): EngineTurnRunner {
@@ -43,7 +43,7 @@ function recordingRunner(moves: string[]): { runner: EngineTurnRunner; requests:
 function factoryFor(movesByCall: string[]): EngineRunnerFactory {
   let call = 0;
   return () => {
-    const move = movesByCall[Math.min(call, movesByCall.length - 1)] ?? 'e2e4';
+    const move = movesByCall[Math.min(call, movesByCall.length - 1)] ?? 'h2e2';
     call += 1;
     return scriptedRunner(move);
   };
@@ -57,32 +57,33 @@ async function collect(session: GameSession): Promise<SessionEvent[]> {
 
 describe('GameSession (human vs engine)', () => {
   it('lets the human move first and the engine reply', async () => {
-    // Human plays e4 -> engine replies e5.
+    // Human plays 炮二平五 (h2e2) -> engine replies 马8进7 (b9c7).
     const session = new GameSession({
-      rules: new ChessRules(),
+      rules: new XiangqiRules(),
       white: { kind: 'human', side: 'w', name: 'You' },
-      black: { kind: 'engine', side: 'b', profileId: 'stockfish', strengthLevel: 5 },
-      engineRunnerFactory: factoryFor(['e7e5']),
+      black: { kind: 'engine', side: 'b', profileId: 'pikafish', strengthLevel: 5 },
+      engineRunnerFactory: factoryFor(['b9c7']),
     });
     const events = await collect(session);
     await session.start();
 
-    expect(session.playHumanMove('e2e4')).toBe(true);
+    expect(session.playHumanMove('h2e2')).toBe(true);
     // Give the queued engine turn a tick to resolve.
     await vi.waitFor(() => {
-      expect(events.some(e => e.kind === 'move' && e.by === 'b' && e.uci === 'e7e5')).toBe(true);
+      expect(events.some(e => e.kind === 'move' && e.by === 'b' && e.uci === 'b9c7')).toBe(true);
     });
 
-    expect(session.rules.fen()).toContain('w KQkq'); // after 1.e4 e5 white to move
+    expect(session.rules.history()).toHaveLength(2);
+    expect(session.rules.turn()).toBe('w'); // back to red after the pair
     await session.dispose();
   });
 
   it('emits thinking/engineInfo/result lifecycle events', async () => {
     const session = new GameSession({
-      rules: new ChessRules(),
-      white: { kind: 'engine', side: 'w', profileId: 'stockfish', strengthLevel: 3 },
+      rules: new XiangqiRules(),
+      white: { kind: 'engine', side: 'w', profileId: 'pikafish', strengthLevel: 3 },
       black: { kind: 'human', side: 'b' },
-      engineRunnerFactory: factoryFor(['e2e4']),
+      engineRunnerFactory: factoryFor(['h2e2']),
     });
     const events = await collect(session);
     await session.start();
@@ -103,84 +104,84 @@ describe('GameSession (human vs engine)', () => {
 
   it('undo pops back to the human turn in vs-engine games', async () => {
     const session = new GameSession({
-      rules: new ChessRules(),
+      rules: new XiangqiRules(),
       white: { kind: 'human', side: 'w' },
-      black: { kind: 'engine', side: 'b', profileId: 'stockfish', strengthLevel: 1 },
-      engineRunnerFactory: factoryFor(['e7e5']),
+      black: { kind: 'engine', side: 'b', profileId: 'pikafish', strengthLevel: 1 },
+      engineRunnerFactory: factoryFor(['b9c7']),
     });
     await collect(session);
     await session.start();
-    session.playHumanMove('e2e4');
+    session.playHumanMove('h2e2');
     await vi.waitFor(() => expect(session.rules.history()).toHaveLength(2));
 
     expect(session.undo()).toBe(true);
-    // Both plies gone; white (human) to move again.
+    // Both plies gone; red (human) to move again.
     expect(session.rules.history()).toHaveLength(0);
     expect(session.rules.turn()).toBe('w');
 
-    session.playHumanMove('d2d4');
+    session.playHumanMove('b2e2');
     await vi.waitFor(() => expect(session.rules.history()).toHaveLength(2));
     await session.dispose();
   });
 
   it('rejects human input when it is not their turn or illegal', async () => {
     const session = new GameSession({
-      rules: new ChessRules(),
+      rules: new XiangqiRules(),
       white: { kind: 'human', side: 'w' },
-      black: { kind: 'engine', side: 'b', profileId: 'stockfish', strengthLevel: 1 },
-      engineRunnerFactory: factoryFor(['e7e5']),
+      black: { kind: 'engine', side: 'b', profileId: 'pikafish', strengthLevel: 1 },
+      engineRunnerFactory: factoryFor(['b9c7']),
     });
     await session.start();
 
-    expect(session.playHumanMove('e2e6')).toBe(false); // illegal
-    expect(session.playHumanMove('e2e4')).toBe(true);
+    expect(session.playHumanMove('b0b1')).toBe(false); // horse cannot move straight
+    expect(session.playHumanMove('h2e2')).toBe(true);
 
-    // Engine is now "thinking"; human input must be ignored.
-    expect(session.playHumanMove('d2d4')).toBe(false);
+    // Black is on move now, so a second red move must be rejected.
+    expect(session.playHumanMove('b2e2')).toBe(false);
     await session.dispose();
   });
 
   it('feeds engines the full move history, not a bare FEN (repetition awareness)', async () => {
-    const rec = recordingRunner(['e7e5']);
+    const rec = recordingRunner(['b9c7']);
     const session = new GameSession({
-      rules: new ChessRules(),
+      rules: new XiangqiRules(),
       white: { kind: 'human', side: 'w' },
-      black: { kind: 'engine', side: 'b', profileId: 'stockfish', strengthLevel: 1 },
+      black: { kind: 'engine', side: 'b', profileId: 'pikafish', strengthLevel: 1 },
       engineRunnerFactory: () => rec.runner,
     });
     await collect(session);
     await session.start();
-    session.playHumanMove('e2e4');
+    session.playHumanMove('h2e2');
 
     await vi.waitFor(() => expect(rec.requests.length).toBeGreaterThan(0));
-    expect(rec.requests[0]).toEqual({ fen: CHESS_START, moves: ['e2e4'] });
+    expect(rec.requests[0]).toEqual({ fen: XQ_START, moves: ['h2e2'] });
     await session.dispose();
   });
 
   it('hint requests also carry the full history', async () => {
-    const rec = recordingRunner(['e7e5', 'g1f3']);
+    const rec = recordingRunner(['b9c7', 'h0g2']);
     const session = new GameSession({
-      rules: new ChessRules(),
+      rules: new XiangqiRules(),
       white: { kind: 'human', side: 'w' },
-      black: { kind: 'engine', side: 'b', profileId: 'stockfish', strengthLevel: 1 },
+      black: { kind: 'engine', side: 'b', profileId: 'pikafish', strengthLevel: 1 },
       engineRunnerFactory: () => rec.runner,
     });
     await session.start();
-    session.playHumanMove('e2e4');
+    session.playHumanMove('h2e2');
     await vi.waitFor(() => expect(rec.requests).toHaveLength(1));
 
-    // hint() lazily reuses the same factory/runner — its second request is for white to move.
+    // hint() lazily reuses the same factory/runner — its second request is for red to move.
     const mv = await session.hint();
-    expect(mv?.uci).toBe('g1f3');
+    expect(mv?.uci).toBe('h0g2');
     expect(rec.requests).toHaveLength(2);
-    expect(rec.requests[1]).toEqual({ fen: CHESS_START, moves: ['e2e4', 'e7e5'] });
+    expect(rec.requests[1]).toEqual({ fen: XQ_START, moves: ['h2e2', 'b9c7'] });
     await session.dispose();
   });
 });
 
 describe('GameSession xiangqi repetition adjudication (长将)', () => {
-  // Black king d9, red rook a8, red king e0. The engine (white) toggles the
-  // rook a8<->a9 checking on EVERY ply; the human king shuttles d9<->d8.
+  // Black general d9, red rook a8, red general e0. The engine (red) toggles the
+  // rook a8<->a9 checking on EVERY ply; the human general shuttles d9<->d8.
   // Third occurrence of the start position → 长将判负 against the engine.
   const SHUTTLE_FEN = '3k5/R8/9/9/9/9/9/9/9/4K4 w - - 0 1';
 
@@ -239,8 +240,11 @@ describe('GameSession xiangqi repetition adjudication (长将)', () => {
 });
 
 describe('GameSession (engine vs engine)', () => {
-  it('chains moves until a terminal result', async () => {
-    // Scripted Fool's Mate: white 1.f3 g4?, black answers 1...e5 2...Qh4#.
+  it('chains plies on both sides until a terminal result', async () => {
+    // Same repeated-check scenario as above, but neither side is human: this
+    // exercises the autoPlay chain end to end.
+    const SHUTTLE_FEN = '3k5/R8/9/9/9/9/9/9/9/4K4 w - - 0 1';
+
     function seqRunner(moves: string[]): EngineTurnRunner {
       let i = 0;
       return {
@@ -256,13 +260,13 @@ describe('GameSession (engine vs engine)', () => {
     }
 
     const session = new GameSession({
-      rules: new ChessRules(),
-      white: { kind: 'engine', side: 'w', profileId: 'stockfish', strengthLevel: 1 },
-      black: { kind: 'engine', side: 'b', profileId: 'stockfish', strengthLevel: 20 },
+      rules: new XiangqiRules(SHUTTLE_FEN),
+      white: { kind: 'engine', side: 'w', profileId: 'pikafish', strengthLevel: 6 },
+      black: { kind: 'engine', side: 'b', profileId: 'pikafish', strengthLevel: 7 },
       engineRunnerFactory: args =>
-        args.strengthLevel === 20
-          ? seqRunner(['e7e5', 'd8h4'])
-          : seqRunner(['f2f3', 'g2g4']),
+        args.strengthLevel === 6
+          ? seqRunner(['a8a9', 'a9a8', 'a8a9', 'a9a8'])
+          : seqRunner(['d9d8', 'd8d9', 'd9d8', 'd8d9']),
     });
     await collect(session);
     await session.start();
@@ -271,17 +275,21 @@ describe('GameSession (engine vs engine)', () => {
       () => {
         expect(session.over).toBe(true);
       },
-      { timeout: 2000 },
+      { timeout: 3000 },
     );
-    expect(session.finalResult).toMatchObject({ winner: 'b', reason: 'checkmate' });
+    expect(session.finalResult).toEqual({ winner: 'b', reason: 'perpetual-check' });
     expect(session.rules.history().map(h => h.uci)).toEqual([
-      'f2f3',
-      'e7e5',
-      'g2g4',
-      'd8h4',
+      'a8a9',
+      'd9d8',
+      'a9a8',
+      'd8d9',
+      'a8a9',
+      'd9d8',
+      'a9a8',
+      'd8d9',
     ]);
     await session.dispose();
-  }, 5000);
+  }, 8000);
 });
 
 describe('GameClock flagging', () => {
@@ -320,7 +328,7 @@ describe('GameClock flagging', () => {
       () => fakeNow,
     );
     clock.start('w');
-    fakeNow += 2_000; // white thought for 2s
+    fakeNow += 2_000; // red thought for 2s
     clock.switchTo('b');
     const s = clock.state();
     expect(s.remainingW).toBe(58_500); // 60000 - 2000 + 500

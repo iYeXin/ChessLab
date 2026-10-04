@@ -1,87 +1,121 @@
 /**
- * Ground-truth probe: asks real engines for perft numbers / handshake info.
- * Used to pin rule-library test constants and verify the UCI layer end-to-end.
+ * Ground-truth probe: asks the real engine for perft numbers and compares them
+ * with the vendored rules library. Used to pin test constants and to localise
+ * move-generator divergences.
+ *
+ * Usage:
+ *   pnpm probe:perft              # depths 1..3, local only
+ *   pnpm probe:perft 3 --divide   # per-root-move comparison against Pikafish
  */
-import { NodeProcessTransport } from '../packages/engine-process/src/node';
-import { UciEngineDriver } from '../packages/engine-uci/src';
-import { PIKAFISH_PROFILE, STOCKFISH_PROFILE } from '../packages/engine-uci/src';
+import { existsSync } from 'node:fs';
 import { parseManifest } from './engine-paths';
+import { NodeProcessTransport } from './node-transport';
+import { XiangqiRules } from '../packages/rules-xiangqi/src';
 
-async function pikafishPerft(): Promise<void> {
-  const m = parseManifest();
-  if (!m.pikafishPath) throw new Error('pikafish binary missing');
-  const driver = new UciEngineDriver(PIKAFISH_PROFILE, {
-    debug: msg => process.stdout.write(`    ${msg}\n`),
-  });
-  await driver.start(new NodeProcessTransport({ command: m.pikafishPath }));
-  console.log(`engine: ${driver.name}`);
-  console.log(
-    `options: Threads=${driver.availableOptions.has('Threads')} EvalFile=${driver.availableOptions.has('EvalFile')} SkillLevel=${driver.availableOptions.has('Skill Level')} LimitStrength=${driver.availableOptions.has('UCI_LimitStrength')}`,
-  );
-
-  // Perft via `go perft N` — output arrives as "info string ..." style lines?
-  // Stockfish-family prints raw perft lines then "Nodes searched: X".
-  // Those lines are not standard UCI; parse them from a side channel instead:
-  // use `position startpos` + `go perft N` and capture unparsed lines.
-  for (const depth of [1, 2, 3]) {
-    const lines: string[] = [];
-    const t = driver as unknown as { handleLine?: (l: string) => void };
-    void t;
-    // Simplest: send go perft and collect everything until "Nodes searched".
-    const result = await new Promise<string>((resolve, reject) => {
-      const transport = (driver as unknown as { transport: { onLine: (cb: (l: string) => void) => void; write: (s: string) => void } }).transport;
-      if (!transport) return reject(new Error('no transport'));
-      const timer = setTimeout(() => reject(new Error('perft timeout')), 30000);
-      let buf = '';
-      transport.onLine((line: string) => {
-        buf += line + '\n';
-        if (/Nodes searched/.test(line)) {
-          clearTimeout(timer);
-          resolve(buf);
-        }
-      });
-      transport.write(`position startpos`);
-      transport.write(`go perft ${depth}`);
-    });
-    const nodesLine = result
-      .split('\n')
-      .find(l => l.startsWith('Nodes searched'))
-      ?.trim();
-    console.log(`perft(${depth}): ${nodesLine ?? '??'}`);
-    lines.length = 0;
-  }
-  await driver.quit();
+interface EnginePerft {
+  total: number | null;
+  perRoot: Map<string, number>;
 }
 
-async function stockfishSanity(): Promise<void> {
-  const m = parseManifest();
-  if (!m.stockfishPath) throw new Error('stockfish binary missing');
-  const driver = new UciEngineDriver(STOCKFISH_PROFILE);
-  await driver.start(new NodeProcessTransport({ command: m.stockfishPath }));
-  console.log(`engine: ${driver.name}`);
-  const res = await driver.search({ fen: 'k7/8/1K6/8/8/8/8/7R w - - 0 1' }, { movetimeMs: 1200 });
-  console.log(`mate-in-1 bestmove: ${res.bestmove}`);
-  // Chess perft d2 from startpos should be 400.
-  await driver.quit();
+/** Drive `go perft N` on a raw transport and parse the non-UCI output. */
+async function enginePerft(depth: number): Promise<EnginePerft> {
+  const manifest = parseManifest();
+  const bin = process.env.CHESS_PIKAFISH ?? manifest.pikafishPath;
+  if (!bin || !existsSync(bin)) throw new Error('pikafish binary missing — run `pnpm fetch:engines`');
+
+  const transport = new NodeProcessTransport({ command: bin });
+  const perRoot = new Map<string, number>();
+  let total: number | null = null;
+  let handshake = false;
+  let collecting = false;
+
+  const done = new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('perft timeout')), 120_000);
+    transport.onLine(line => {
+      if (!handshake) {
+        if (line.trim() === 'uciok') {
+          handshake = true;
+          collecting = true;
+          transport.write(`position startpos`);
+          transport.write(`go perft ${depth}`);
+        }
+        return;
+      }
+      if (!collecting) return;
+      const m = /^([a-i][0-9][a-i][0-9][a-z]?)\s*:\s*(\d+)/.exec(line.trim());
+      if (m) {
+        perRoot.set(m[1]!, Number(m[2]));
+        return;
+      }
+      const t = /^Nodes searched\s*:\s*(\d+)/.exec(line.trim());
+      if (t) {
+        total = Number(t[1]);
+        collecting = false;
+        clearTimeout(timer);
+        resolve();
+      }
+    });
+  });
+
+  transport.write('uci');
+  await done;
+  transport.kill();
+  return { total, perRoot };
+}
+
+function localPerft(depth: number): number {
+  return new XiangqiRules().perft(depth);
+}
+
+function localDivide(depth: number): Map<string, number> {
+  const out = new Map<string, number>();
+  const root = new XiangqiRules();
+  for (const m of root.moves()) {
+    const next = new XiangqiRules();
+    next.move(m.uci);
+    out.set(m.uci, depth <= 1 ? 1 : next.perft(depth - 1));
+  }
+  return out;
 }
 
 async function main(): Promise<void> {
-  const filter = process.argv[2]; // 'sf' | 'pf' | undefined (both)
-  if (filter !== 'sf') {
-    try {
-      await pikafishPerft();
-    } catch (err) {
-      console.error(`[pf probe] FAILED: ${String(err)}`);
+  const args = process.argv.slice(2).filter(a => a !== '--');
+  const divide = args.includes('--divide');
+  const depthArg = Number(args.find(a => /^\d+$/.test(a)) ?? 3);
+
+  console.log('--- local perft (vendored xiangqi.js) ---');
+  for (let d = 1; d <= Math.min(depthArg, 3); d += 1) {
+    const t0 = Date.now();
+    console.log(`perft(${d}) = ${localPerft(d)}  (${Date.now() - t0}ms)`);
+  }
+
+  if (!divide) return;
+
+  let truth: EnginePerft;
+  try {
+    truth = await enginePerft(depthArg);
+  } catch (err) {
+    console.error(`\n[engine perft] unavailable: ${String(err)}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const mine = localDivide(depthArg);
+  console.log(`\n--- divide at depth ${depthArg} ---`);
+  console.log(`engine total: ${truth.total}   local total: ${[...mine.values()].reduce((a, b) => a + b, 0)}`);
+
+  const moves = [...new Set([...mine.keys(), ...truth.perRoot.keys()])].sort();
+  let mismatches = 0;
+  for (const mv of moves) {
+    const a = mine.get(mv) ?? 0;
+    const b = truth.perRoot.get(mv) ?? 0;
+    if (a !== b) {
+      mismatches += 1;
+      console.log(`  DIFF ${mv}: local=${a} engine=${b} (delta ${a - b})`);
     }
   }
-  if (filter !== 'pf') {
-    try {
-      await stockfishSanity();
-    } catch (err) {
-      console.error(`[sf probe] FAILED: ${String(err)}`);
-      process.exitCode = 1;
-    }
-  }
+  if (mismatches === 0) console.log('  no per-root mismatches');
+  else console.log(`  ${mismatches} mismatching root move(s)`);
 }
 
 void main();

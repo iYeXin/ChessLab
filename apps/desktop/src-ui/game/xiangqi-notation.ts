@@ -1,4 +1,4 @@
-import type { Piece, Square } from '@chesslab/rules-core';
+import type { Piece, Square } from '@chessnext/rules-core';
 
 // Chinese piece names per side
 const NAMES: Record<'w' | 'b', Record<string, string>> = {

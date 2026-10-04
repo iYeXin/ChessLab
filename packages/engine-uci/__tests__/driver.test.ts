@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { UciEngineDriver } from '../src/driver';
-import { STOCKFISH_PROFILE } from '../src/profiles';
+import { PIKAFISH_PROFILE } from '../src/profiles';
 import type { EngineTransport } from '../src/types';
 
 /** Scriptable in-memory transport simulating a well-behaved UCI engine. */
@@ -16,13 +16,13 @@ class ScriptedTransport implements EngineTransport {
   write(line: string): void {
     this.written.push(line);
     if (line === 'uci') {
-      this.feed('id name Stockfish 18');
-      this.feed('id author the Stockfish developers');
+      this.feed('id name Pikafish 2026-01-02');
+      this.feed('id author the Pikafish developers');
       this.feed('option name Threads type spin default 1 min 1 max 1024');
       this.feed('option name Hash type spin default 16 min 1 max 33554432');
       this.feed('option name MultiPV type spin default 1 min 1 max 500');
-      this.feed('option name UCI_Elo type spin default 1320 min 1320 max 3190');
-      this.feed('option name UCI_LimitStrength type check default false');
+      this.feed('option name EvalFile type string default pikafish.nnue');
+      this.feed('option name Skill Level type spin default 20 min 0 max 20');
       this.feed('uciok');
     } else if (line === 'isready') {
       this.feed('readyok');
@@ -50,7 +50,7 @@ async function startedPair(
 ): Promise<[UciEngineDriver, ScriptedTransport]> {
   const t = new ScriptedTransport();
   configure?.(t);
-  const d = new UciEngineDriver(STOCKFISH_PROFILE);
+  const d = new UciEngineDriver(PIKAFISH_PROFILE);
   await d.start(t);
   return [d, t];
 }
@@ -58,19 +58,20 @@ async function startedPair(
 describe('UciEngineDriver', () => {
   it('performs handshake and records engine identity + options', async () => {
     const [driver] = await startedPair();
-    expect(driver.name).toBe('Stockfish 18');
+    expect(driver.name).toBe('Pikafish 2026-01-02');
     expect(driver.isAlive).toBe(true);
-    expect(driver.availableOptions.has('UCI_Elo')).toBe(true);
+    expect(driver.availableOptions.has('EvalFile')).toBe(true);
     await driver.quit();
   });
 
   it('sends profile defaults then isready right after uciok', async () => {
     const [driver, t] = await startedPair();
+    // Per-search knobs (MultiPV) are applied by the runner, not as handshake
+    // defaults — see PIKAFISH_PROFILE.defaultOptions.
     expect(t.written).toEqual([
       'uci',
       'setoption name Threads value 2',
       'setoption name Hash value 128',
-      'setoption name MultiPV value 1',
       'isready',
     ]);
     await driver.quit();
@@ -126,15 +127,15 @@ describe('UciEngineDriver', () => {
 
     // Answer only the first `go`.
     await vi.waitFor(() => expect(t.written.some(l => l.startsWith('go'))).toBe(true));
-    t.feed('bestmove e2e4');
+    t.feed('bestmove h2e2');
     const r1 = await p1;
-    expect(r1.bestmove).toBe('e2e4');
+    expect(r1.bestmove).toBe('h2e2');
 
     // Now the second search gets its turn.
     await vi.waitFor(() => expect(t.written.some(l => l.includes('fen-two'))).toBe(true));
-    t.feed('bestmove d2d4');
+    t.feed('bestmove b9c7');
     const r2 = await p2;
-    expect(r2.bestmove).toBe('d2d4');
+    expect(r2.bestmove).toBe('b9c7');
 
     expect(t.written.filter(l => l.startsWith('position')).length).toBe(2);
     await driver.quit();
@@ -142,7 +143,7 @@ describe('UciEngineDriver', () => {
 
   it('rejects pending searches and reports death when process exits', async () => {
     const t = new ScriptedTransport();
-    const d = new UciEngineDriver(STOCKFISH_PROFILE);
+    const d = new UciEngineDriver(PIKAFISH_PROFILE);
     await d.start(t);
 
     const death = vi.fn();
@@ -158,13 +159,12 @@ describe('UciEngineDriver', () => {
     expect(d.isAlive).toBe(false);
   });
 
-  it('applies strength options via setOptions and confirms readiness', async () => {
+  it('applies engine options via setOptions and confirms readiness', async () => {
     const [driver, t] = await startedPair();
     const before = t.written.length;
-    await driver.setOptions({ UCI_LimitStrength: true, UCI_Elo: 2000 });
+    await driver.setOptions({ EvalFile: 'pikafish.nnue' });
     expect(t.written.slice(before)).toEqual([
-      'setoption name UCI_LimitStrength value true',
-      'setoption name UCI_Elo value 2000',
+      'setoption name EvalFile value pikafish.nnue',
       'isready',
     ]);
     await driver.quit();

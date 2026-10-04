@@ -1,33 +1,27 @@
 import React, { useState } from 'react';
-import type { GameType, Side } from '@chesslab/rules-core';
-import { themeFor, themeClassFor } from '../theme/games';
+import type { Side } from '@chessnext/rules-core';
+import { XIANGQI_THEME, THEME_CLASS } from '../theme/games';
 import { TopBar } from '../components/GameChrome';
-import type { StartConfig, GameMode } from './HomeScreen';
+import { DifficultyPicker } from '../components/DifficultyPicker';
+import type { StartConfig, GameMode } from '../state/useGameSession';
+import type { Difficulty } from '../state/difficulty';
 import { useSettings } from '../state/settings';
 
-const DIFF_LABELS = ['入门', '业余', '进阶', '大师', '特级'] as const;
-
 export function GameSetupScreen(props: {
-  gameType: GameType;
   onBack(): void;
   onStart(cfg: StartConfig): void;
 }) {
-  const theme = themeFor(props.gameType);
+  const theme = XIANGQI_THEME;
   const { settings } = useSettings();
   const [side, setSide] = useState<Side>('w');
-  const [difficulty, setDifficulty] = useState<1 | 2 | 3 | 4 | 5>(2);
+  const [difficulty, setDifficulty] = useState<Difficulty>(2);
   const [mode, setMode] = useState<GameMode>('pve');
-  const [difficultySecond, setDifficultySecond] = useState<1 | 2 | 3 | 4 | 5>(3);
+  const [difficultySecond, setDifficultySecond] = useState<Difficulty>(3);
   const [stepMode, setStepMode] = useState(false);
   const [autoDelayMs, setAutoDelayMs] = useState<number>(settings.autoDelayMs);
 
-  const isChess = props.gameType === 'chess';
-  const title = isChess ? '国际象棋' : '中国象棋';
-  const tag = isChess ? 'STOCKFISH 18' : 'PIKAFISH';
-
   const handleStart = () => {
     props.onStart({
-      gameType: props.gameType,
       mode,
       humanSide: side,
       difficulty,
@@ -38,11 +32,11 @@ export function GameSetupScreen(props: {
   };
 
   return (
-    <div className={themeClassFor(props.gameType)} style={{ height: '100%', backgroundColor: '#F1EADC', display: 'flex', flexDirection: 'column' }}>
-      <TopBar theme={theme} title={title} subtitle={tag} onBack={props.onBack} />
+    <div className={THEME_CLASS} style={{ height: '100%', backgroundColor: '#F1EADC', display: 'flex', flexDirection: 'column' }}>
+      <TopBar theme={theme} title="中国象棋" subtitle="PIKAFISH" onBack={props.onBack} />
       <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--sp-l) var(--sp-l)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <div style={{ width: '100%', maxWidth: 420, display: 'flex', flexDirection: 'column', gap: 'var(--sp-l)' }}>
-          {/* Mode selector (pve/pvp/eve) - item 7 */}
+          {/* Mode selector (pve/pvp/eve) */}
           <Section label="对战模式">
             <div style={{ display: 'flex', gap: 'var(--sp-s)', flexWrap: 'wrap' }}>
               <Seg label="人机" active={mode === 'pve'} onPress={() => setMode('pve')} />
@@ -59,28 +53,25 @@ export function GameSetupScreen(props: {
           {mode === 'pve' ? (
             <Section label="执子">
               <div style={{ display: 'flex', gap: 'var(--sp-s)', flexWrap: 'wrap' }}>
-                <Seg label={isChess ? '白先' : '红先'} active={side === 'w'} onPress={() => setSide('w')} />
+                <Seg label="红先" active={side === 'w'} onPress={() => setSide('w')} />
                 <Seg label="黑后" active={side === 'b'} onPress={() => setSide('b')} />
               </div>
             </Section>
           ) : null}
 
-          <Section label={mode === 'eve' ? '红方/白方 棋力' : mode === 'pvp' ? '难度（仅作记录）' : '难度'}>
-            <div style={{ display: 'flex', gap: 'var(--sp-s)', flexWrap: 'wrap' }}>
-              {DIFF_LABELS.map((l, i) => (
-                <Seg key={l} label={l} active={difficulty === i + 1} onPress={() => setDifficulty((i + 1) as 1 | 2 | 3 | 4 | 5)} />
-              ))}
-            </div>
+          <Section label={mode === 'eve' ? '红方 棋力' : mode === 'pvp' ? '难度（仅作记录）' : '难度'}>
+            <DifficultyPicker
+              label={mode === 'eve' ? '红方 棋力' : '难度'}
+              difficulty={difficulty}
+              onChange={setDifficulty}
+              showLevel
+            />
           </Section>
 
           {mode === 'eve' ? (
             <>
               <Section label="黑方棋力">
-                <div style={{ display: 'flex', gap: 'var(--sp-s)', flexWrap: 'wrap' }}>
-                  {DIFF_LABELS.map((l, i) => (
-                    <Seg key={l} label={l} active={difficultySecond === i + 1} onPress={() => setDifficultySecond((i + 1) as 1 | 2 | 3 | 4 | 5)} />
-                  ))}
-                </div>
+                <DifficultyPicker label="黑方 棋力" difficulty={difficultySecond} onChange={setDifficultySecond} />
               </Section>
               <Section label="步进">
                 <div style={{ display: 'flex', gap: 'var(--sp-s)' }}>
@@ -92,7 +83,7 @@ export function GameSetupScreen(props: {
                 <Section label="自动延迟">
                   <div style={{ display: 'flex', gap: 'var(--sp-s)', flexWrap: 'wrap' }}>
                     {[0, 500, 800, 1200, 2000].map(v => (
-                      <Seg key={v} label={v === 0 ? '无' : `${v / 1000}秒`} active={autoDelayMs === v} onPress={() => setAutoDelayMs(v as any)} />
+                      <Seg key={v} label={v === 0 ? '无' : `${v / 1000}秒`} active={autoDelayMs === v} onPress={() => setAutoDelayMs(v)} />
                     ))}
                   </div>
                 </Section>
@@ -125,7 +116,7 @@ function Section(props: { label: string; children: React.ReactNode }) {
 }
 
 function Seg(props: { label: string; desc?: string; active: boolean; onPress(): void }) {
-  const C = { segBorder: '#D8CDB8', segBg: '#FBF7EE', segActiveBorder: '#7A5230', segActiveBg: '#E9DCC4', segText: '#5C5343', segTextActive: '#4C3418' };
+  const C = { segBorder: '#D8CDB8', segBg: '#FBF7EE', segActiveBorder: '#A63A2B', segActiveBg: '#E9DCC4', segText: '#5C5343', segTextActive: '#4C3418' };
   return (
     <button
       type="button"

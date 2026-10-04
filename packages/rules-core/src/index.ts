@@ -1,53 +1,54 @@
 /**
- * Shared rule-engine abstractions for every supported game.
+ * Shared rule-engine abstractions.
+ *
+ * Scope note
+ * ----------
+ * This experimental build supports **xiangqi (中国象棋) only**. The `GameType`
+ * union and the `RulesAdapter` façade are deliberately kept as a single-member
+ * seam: the engine, session and UI layers stay game-agnostic, so the western
+ * chess adapter could be added back without touching any plumbing above it.
  *
  * Design notes
  * ------------
- * - Sides are normalized to 'w' | 'b' across ALL games so that the engine and
+ * - Sides are normalized to 'w' | 'b' across all games so that the engine and
  *   session layers never care about game-specific naming:
- *       chess    : w = white, b = black
  *       xiangqi  : w = red (moves first), b = black
  *     The presentation layer maps these tokens to localized piece colors.
- * - Moves are expressed as UCI/ICCS-style coordinate strings ("e2e4", "h2e2",
- *   promotions as a trailing piece letter, e.g. "e7e8q"). This is exactly what
- *   Stockfish / Pikafish accept in `position ... moves ...`, so no translation
- *   is needed at the engine boundary.
+ * - Moves are ICCS coordinate strings ("h2e2"). This is exactly what Pikafish
+ *   accepts in `position ... moves ...`, so no translation is needed at the
+ *   engine boundary.
  * - Implementations must be pure logic: no I/O, no React, no timers. That keeps
  *   them testable on Node and reusable if we later port to other surfaces.
  */
 
-export type GameType = 'chess' | 'xiangqi';
+export type GameType = 'xiangqi';
 
-/** Normalized side token. 'w' always moves first. */
+/** Normalized side token. 'w' is red and always moves first. */
 export type Side = 'w' | 'b';
 
 export type Square = string;
 
-/** Coordinate move ("e2e4", "h2e2", "a7a8q"). Same alphabet used by the engines. */
+/** ICCS coordinate move ("h2e2"). Same alphabet the engine speaks. */
 export type MoveUci = string;
 
 export interface LegalMove {
   uci: MoveUci;
   from: Square;
   to: Square;
-  /** Promotion piece letter (chess only): q r b n */
-  promotion?: string;
-  /** Human-readable notation for lists/logs (SAN for chess, ICCS for xiangqi). */
+  /** Human-readable notation for lists/logs (ICCS, or traditional 中文记谱). */
   san: string;
 }
 
 export type GameEndReason =
   // decisive endings
-  | 'checkmate' // chess checkmate / xiangqi 将死
-  | 'no-legal-moves' // xiangqi 困毙 — stalemated side LOSES (unlike chess)
+  | 'checkmate' // 将死
+  | 'no-legal-moves' // 困毙 — the stalemated side LOSES (unlike western chess)
   | 'resign'
   | 'timeout'
-  /** xiangqi 长将 — perpetual checker must vary; on third repetition they LOSE. */
+  /** 长将 — the perpetual checker must vary; on the third repetition they LOSE. */
   | 'perpetual-check' // decisive (reserved: 'perpetual-chase' when 长捉 lands)
   // draws
-  | 'stalemate' // chess pat only
   | 'repetition'
-  | 'fifty-move-rule' // chess 50-move
   | 'insufficient-material'
   | 'agreement';
 
@@ -62,11 +63,8 @@ export interface HistoryEntry {
   san: string;
 }
 
-export type PieceType =
-  // chess
-  | 'k' | 'q' | 'r' | 'b' | 'n' | 'p'
-  // xiangqi extras ('b' is shared: bishop/象-相)
-  | 'a' | 'c';
+/** Xiangqi piece types: 将/帅 士/仕 象/相 马 车 炮 卒/兵. */
+export type PieceType = 'k' | 'a' | 'b' | 'n' | 'r' | 'c' | 'p';
 
 export interface Piece {
   type: PieceType;
@@ -129,7 +127,6 @@ export const other = (side: Side): Side => (side === 'w' ? 'b' : 'w');
 
 /** Initial position FEN per game, useful for engines (`position fen ...`). */
 export const INITIAL_FENS: Record<GameType, string> = {
-  chess: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
   // Xiangqi FEN dialect: 10 ranks x 9 files, rank order top(black) -> bottom(red).
   xiangqi: 'rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1',
 };
